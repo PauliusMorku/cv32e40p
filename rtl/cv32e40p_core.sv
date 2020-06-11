@@ -108,7 +108,7 @@ module cv32e40p_core
   // Unused parameters and signals (left in code for future design extensions)
   localparam INSTR_RDATA_WIDTH   = 32;
   localparam PULP_SECURE         =  0;
-  localparam N_PMP_ENTRIES       = 16;
+  localparam N_PMP_ENTRIES       =  0;
   localparam USE_PMP             =  0;          // if PULP_SECURE is 1, you can still not use the PMP
   localparam A_EXTENSION         =  0;
   localparam FP_DIVSQRT          =  0;
@@ -119,7 +119,12 @@ module cv32e40p_core
   localparam SHARED_FP_DIVSQRT   =  0;
   localparam DEBUG_TRIGGER_EN    =  1;
   localparam APU                 =  0;
-  localparam FPU_OVERRIDE        =  0;
+  
+  localparam PULP_HWLP_OVERRIDE           =  0;
+  localparam PULP_CLUSTER_OVERRIDE        =  0;
+  localparam FPU_OVERRIDE                 =  0;
+  localparam PULP_ZFINX_OVERRIDE          =  0;
+  localparam NUM_MHPMCOUNTERS_OVERRIDE    =  0;
 
   // Unused signals related to above unused parameters
   // Left in code (with their original _i, _o postfixes) for future design extensions;
@@ -134,8 +139,8 @@ module cv32e40p_core
 
 
   // IF/ID signals
-  logic              is_hwlp_id;
-  logic [N_HWLP-1:0] hwlp_dec_cnt_id;
+  //logic              is_hwlp_id;
+  //logic [N_HWLP-1:0] hwlp_dec_cnt_id;
   logic              instr_valid_id;
   logic [31:0]       instr_rdata_id;    // Instruction sampled inside IF stage
   logic              is_compressed_id;
@@ -286,14 +291,14 @@ module cv32e40p_core
   logic        trigger_match;
 
   // Hardware loop controller signals
-  logic [N_HWLP-1:0] [31:0] hwlp_start;
-  logic [N_HWLP-1:0] [31:0] hwlp_end;
-  logic [N_HWLP-1:0] [31:0] hwlp_cnt;
+  //logic [N_HWLP-1:0] [31:0] hwlp_start;
+  //logic [N_HWLP-1:0] [31:0] hwlp_end;
+  //logic [N_HWLP-1:0] [31:0] hwlp_cnt;
 
   // used to write from CS registers to hardware loop registers
-  logic   [N_HWLP_BITS-1:0] csr_hwlp_regid;
-  logic               [2:0] csr_hwlp_we;
-  logic              [31:0] csr_hwlp_data;
+  //logic   [N_HWLP_BITS-1:0] csr_hwlp_regid;
+  //logic               [2:0] csr_hwlp_we;
+  //logic              [31:0] csr_hwlp_data;
 
   // Performance Counters
   logic        perf_imiss;
@@ -344,9 +349,9 @@ module cv32e40p_core
 
   // if we are sleeping on a barrier let's just wait on the instruction
   // interface to finish loading instructions
-  assign core_busy_int = (PULP_CLUSTER & data_load_event_ex & data_req_o) ? (if_busy | apu_busy) : (if_busy | ctrl_busy | lsu_busy | apu_busy);
+  assign core_busy_int = (PULP_CLUSTER_OVERRIDE & data_load_event_ex & data_req_o) ? (if_busy | apu_busy) : (if_busy | ctrl_busy | lsu_busy | apu_busy);
 
-  assign clock_en      = PULP_CLUSTER ? clock_en_i | core_busy_o : irq_pending | debug_req_i | core_busy_o;
+  assign clock_en      = PULP_CLUSTER_OVERRIDE ? clock_en_i | core_busy_o : irq_pending | debug_req_i | core_busy_o;
 
   assign sleeping      = ~core_busy_o;
 
@@ -438,9 +443,9 @@ module cv32e40p_core
     .u_exc_vec_pc_mux_i  ( u_exc_vec_pc_mux_id ),
 
     // from hwloop registers
-    .hwlp_start_i        ( hwlp_start        ),
-    .hwlp_end_i          ( hwlp_end          ),
-    .hwlp_cnt_i          ( hwlp_cnt          ),
+    //.hwlp_start_i        ( hwlp_start        ),
+    //.hwlp_end_i          ( hwlp_end          ),
+    //.hwlp_cnt_i          ( hwlp_cnt          ),
 
 
     // Jump targets
@@ -466,7 +471,7 @@ module cv32e40p_core
   /////////////////////////////////////////////////
   riscv_id_stage
   #(
-    .PULP_HWLP                    ( PULP_HWLP            ),
+    .PULP_HWLP                    ( PULP_HWLP_OVERRIDE   ),
     .N_HWLP                       ( N_HWLP               ),
     .PULP_SECURE                  ( PULP_SECURE          ),
     .USE_PMP                      ( USE_PMP              ),
@@ -501,8 +506,8 @@ module cv32e40p_core
     .is_decoding_o                ( is_decoding          ),
 
     // Interface to instruction memory
-    .hwlp_dec_cnt_i               ( hwlp_dec_cnt_id      ),
-    .is_hwlp_i                    ( is_hwlp_id           ),
+    //.hwlp_dec_cnt_i               ( hwlp_dec_cnt_id      ),
+    //.is_hwlp_i                    ( is_hwlp_id           ),
     .instr_valid_i                ( instr_valid_id       ),
     .instr_rdata_i                ( instr_rdata_id       ),
     .instr_req_o                  ( instr_req_int        ),
@@ -614,14 +619,14 @@ module cv32e40p_core
     .csr_save_cause_o             ( csr_save_cause       ),
 
     // hardware loop signals to IF hwlp controller
-    .hwlp_start_o                 ( hwlp_start           ),
-    .hwlp_end_o                   ( hwlp_end             ),
-    .hwlp_cnt_o                   ( hwlp_cnt             ),
+    //.hwlp_start_o                 ( hwlp_start           ),
+    //.hwlp_end_o                   ( hwlp_end             ),
+    //.hwlp_cnt_o                   ( hwlp_cnt             ),
 
     // hardware loop signals from CSR
-    .csr_hwlp_regid_i             ( csr_hwlp_regid       ),
-    .csr_hwlp_we_i                ( csr_hwlp_we          ),
-    .csr_hwlp_data_i              ( csr_hwlp_data        ),
+    //.csr_hwlp_regid_i             ( csr_hwlp_regid       ),
+    //.csr_hwlp_we_i                ( csr_hwlp_we          ),
+    //.csr_hwlp_data_i              ( csr_hwlp_data        ),
 
     // LSU
     .data_req_ex_o                ( data_req_ex          ), // to load store unit
@@ -887,8 +892,8 @@ module cv32e40p_core
     .PULP_SECURE      ( PULP_SECURE           ),
     .USE_PMP          ( USE_PMP               ),
     .N_PMP_ENTRIES    ( N_PMP_ENTRIES         ),
-    .NUM_MHPMCOUNTERS ( NUM_MHPMCOUNTERS      ),
-    .PULP_HWLP        ( PULP_HWLP             ),
+    .NUM_MHPMCOUNTERS ( NUM_MHPMCOUNTERS_OVERRIDE),
+    .PULP_HWLP        ( PULP_HWLP_OVERRIDE    ),
     .DEBUG_TRIGGER_EN ( DEBUG_TRIGGER_EN      )
   )
   cs_registers_i
@@ -960,13 +965,13 @@ module cv32e40p_core
     .csr_save_cause_i        ( csr_save_cause     ),
 
     // from hwloop registers
-    .hwlp_start_i            ( hwlp_start         ),
-    .hwlp_end_i              ( hwlp_end           ),
-    .hwlp_cnt_i              ( hwlp_cnt           ),
+    //.hwlp_start_i            ( hwlp_start         ),
+    //.hwlp_end_i              ( hwlp_end           ),
+    //.hwlp_cnt_i              ( hwlp_cnt           ),
 
-    .hwlp_regid_o            ( csr_hwlp_regid     ),
-    .hwlp_we_o               ( csr_hwlp_we        ),
-    .hwlp_data_o             ( csr_hwlp_data      ),
+    //.hwlp_regid_o            ( csr_hwlp_regid     ),
+    //.hwlp_we_o               ( csr_hwlp_we        ),
+    //.hwlp_data_o             ( csr_hwlp_data      ),
 
     // performance counter related signals
     .id_valid_i              ( id_valid           ),
