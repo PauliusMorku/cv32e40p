@@ -111,7 +111,7 @@ module cv32e40p_core
   localparam N_PMP_ENTRIES       = 16;
   localparam USE_PMP             =  0;          // if PULP_SECURE is 1, you can still not use the PMP
   localparam A_EXTENSION         =  0;
-  localparam FP_DIVSQRT          =  FPU;
+  localparam FP_DIVSQRT          =  0;
   localparam SHARED_FP           =  0;
   localparam SHARED_DSP_MULT     =  0;
   localparam SHARED_INT_MULT     =  0;
@@ -129,7 +129,6 @@ module cv32e40p_core
 
   localparam N_HWLP      = 2;
   localparam N_HWLP_BITS = $clog2(N_HWLP);
-  localparam APU         = ((SHARED_DSP_MULT==1) | (SHARED_INT_DIV==1) | (FPU==1)) ? 1 : 0;
 
 
   // IF/ID signals
@@ -201,13 +200,6 @@ module cv32e40p_core
   logic        mult_is_clpx_ex;
   logic [ 1:0] mult_clpx_shift_ex;
   logic        mult_clpx_img_ex;
-
-  // FPU
-  logic [C_PC-1:0]            fprec_csr;
-  logic [C_RM-1:0]            frm_csr;
-  logic [C_FFLAG-1:0]         fflags;
-  logic [C_FFLAG-1:0]         fflags_csr;
-  logic                       fflags_we;
 
   // APU
   logic                        apu_en_ex;
@@ -336,15 +328,7 @@ module cv32e40p_core
   logic  [N_PMP_ENTRIES-1:0] [31:0] pmp_addr;
   logic  [N_PMP_ENTRIES-1:0] [7:0]  pmp_cfg;
 
-  logic                             data_req_pmp;
-  logic [31:0]                      data_addr_pmp;
-  logic                             data_gnt_pmp;
-  logic                             data_err_pmp;
   logic                             data_err_ack;
-  logic                             instr_req_pmp;
-  logic                             instr_gnt_pmp;
-  logic [31:0]                      instr_addr_pmp;
-  logic                             instr_err_pmp;
 
   // interrupt signals
   logic        irq_pending;
@@ -363,55 +347,9 @@ module cv32e40p_core
   assign irq_sec_i = 1'b0;
 
   // APU master signals
-   generate
-      if ( SHARED_FP ) begin
-         assign apu_master_type_o  = apu_type_ex;
-         assign apu_master_flags_o = apu_flags_ex;
-         assign fflags_csr         = apu_master_flags_i;
-      end
-      else begin
-         assign apu_master_type_o  = '0;
-         assign apu_master_flags_o = '0;
-         assign fflags_csr         = fflags;
-      end
-   endgenerate
+  assign apu_master_type_o  = '0;
+  assign apu_master_flags_o = '0;
 
-`ifdef APU_TRACE
-
-   int         apu_trace;
-   string      fn;
-   string      apu_waddr_trace;
-
-
-   // open/close output file for writing
-   initial
-     begin
-        wait(rst_ni == 1'b1);
-        // hart_id_i[10:5] and hart_id_i[3:0] mean cluster_id and core_id in PULP
-        $sformat(fn, "apu_trace_core_%h_%h.log", hart_id_i[10:5], hart_id_i[3:0]);
-        $display("[APU_TRACER] Output filename is: %s", fn);
-        apu_trace = $fopen(fn, "w");
-        $fwrite(apu_trace, "time       register \tresult\n");
-
-        while(1) begin
-
-           @(negedge clk_i);
-           if (ex_stage_i.apu_valid == 1'b1) begin
-              if (ex_stage_i.apu_waddr>31)
-                $sformat(apu_waddr_trace, "f%d",ex_stage_i.apu_waddr[4:0]);
-              else
-                $sformat(apu_waddr_trace, "x%d",ex_stage_i.apu_waddr[4:0]);
-              $fwrite(apu_trace, "%t %s \t\t%h\n", $time, apu_waddr_trace, ex_stage_i.apu_result);
-           end
-        end
-
-   end
-
-   final
-     begin
-        $fclose(apu_trace);
-     end
-`endif
 
   //////////////////////////////////////////////////////////////////////////////////////////////
   //   ____ _            _      __  __                                                   _    //
@@ -473,7 +411,7 @@ module cv32e40p_core
   #(
     .N_HWLP              ( N_HWLP            ),
     .RDATA_WIDTH         ( INSTR_RDATA_WIDTH ),
-    .FPU                 ( FPU               )
+    .FPU                 ( 0                 )
   )
   if_stage_i
   (
@@ -495,12 +433,12 @@ module cv32e40p_core
     .req_i               ( instr_req_int     ),
 
     // instruction cache interface
-    .instr_req_o         ( instr_req_pmp     ),
-    .instr_addr_o        ( instr_addr_pmp    ),
-    .instr_gnt_i         ( instr_gnt_pmp     ),
+    .instr_req_o         ( instr_req_o       ),
+    .instr_addr_o        ( instr_addr_o      ),
+    .instr_gnt_i         ( instr_gnt_i       ),
     .instr_rvalid_i      ( instr_rvalid_i    ),
     .instr_rdata_i       ( instr_rdata_i     ),
-    .instr_err_pmp_i     ( instr_err_pmp     ),
+    .instr_err_pmp_i     ( 1'b0              ),
 
     // outputs to ID stage
     .hwlp_dec_cnt_id_o   ( hwlp_dec_cnt_id   ),
@@ -561,8 +499,8 @@ module cv32e40p_core
     .PULP_SECURE                  ( PULP_SECURE          ),
     .USE_PMP                      ( USE_PMP              ),
     .A_EXTENSION                  ( A_EXTENSION          ),
-    .APU                          ( APU                  ),
-    .FPU                          ( FPU                  ),
+    .APU                          ( 0                    ),
+    .FPU                          ( 0                    ),
     .PULP_ZFINX                   ( PULP_ZFINX           ),
     .FP_DIVSQRT                   ( FP_DIVSQRT           ),
     .SHARED_FP                    ( SHARED_FP            ),
@@ -667,7 +605,7 @@ module cv32e40p_core
     .mult_clpx_img_ex_o           ( mult_clpx_img_ex     ), // from ID to EX stage
 
     // FPU
-    .frm_i                        ( frm_csr                 ),
+    //.frm_i                        ( frm_csr                 ),
 
     // APU
     .apu_en_ex_o                  ( apu_en_ex               ),
@@ -726,7 +664,7 @@ module cv32e40p_core
 
     .prepost_useincr_ex_o         ( useincr_addr_ex      ),
     .data_misaligned_i            ( data_misaligned      ),
-    .data_err_i                   ( data_err_pmp         ),
+    .data_err_i                   ( 1'b0                 ),
     .data_err_ack_o               ( data_err_ack         ),
 
 
@@ -779,7 +717,7 @@ module cv32e40p_core
   /////////////////////////////////////////////////////
   riscv_ex_stage
   #(
-   .FPU              ( FPU                ),
+   .FPU              ( 0                  ),
    .FP_DIVSQRT       ( FP_DIVSQRT         ),
    .SHARED_FP        ( SHARED_FP          ),
    .SHARED_DSP_MULT  ( SHARED_DSP_MULT    ),
@@ -829,9 +767,9 @@ module cv32e40p_core
     .mult_multicycle_o          ( mult_multicycle              ), // to ID/EX pipe registers
 
     // FPU
-    .fpu_prec_i                 ( fprec_csr                    ),
-    .fpu_fflags_o               ( fflags                       ),
-    .fpu_fflags_we_o            ( fflags_we                    ),
+    //.fpu_prec_i                 ( fprec_csr                    ),
+    //.fpu_fflags_o               ( fflags                       ),
+    //.fpu_fflags_we_o            ( fflags_we                    ),
 
     // APU
     .apu_en_i                   ( apu_en_ex                    ),
@@ -856,15 +794,15 @@ module cv32e40p_core
 
     // apu-interconnect
     // handshake signals
-    .apu_master_req_o           ( apu_master_req_o             ),
-    .apu_master_ready_o         ( apu_master_ready_o           ),
-    .apu_master_gnt_i           ( apu_master_gnt_i             ),
+    //.apu_master_req_o           ( apu_master_req_o             ),
+    //.apu_master_ready_o         ( apu_master_ready_o           ),
+    //.apu_master_gnt_i           ( apu_master_gnt_i             ),
     // request channel
-    .apu_master_operands_o      ( apu_master_operands_o        ),
-    .apu_master_op_o            ( apu_master_op_o              ),
+    //.apu_master_operands_o      ( apu_master_operands_o        ),
+    //.apu_master_op_o            ( apu_master_op_o              ),
     // response channel
-    .apu_master_valid_i         ( apu_master_valid_i           ),
-    .apu_master_result_i        ( apu_master_result_i          ),
+    //.apu_master_valid_i         ( apu_master_valid_i           ),
+    //.apu_master_result_i        ( apu_master_result_i          ),
 
     .lsu_en_i                   ( data_req_ex                  ),
     .lsu_rdata_i                ( lsu_rdata                    ),
@@ -898,7 +836,7 @@ module cv32e40p_core
     // stall control
     .is_decoding_i              ( is_decoding                  ),
     .lsu_ready_ex_i             ( lsu_ready_ex                 ),
-    .lsu_err_i                  ( data_err_pmp                 ),
+    .lsu_err_i                  ( 1'b0                         ),
 
     .ex_ready_o                 ( ex_ready                     ),
     .ex_valid_o                 ( ex_valid                     ),
@@ -921,12 +859,12 @@ module cv32e40p_core
     .rst_n                 ( rst_ni             ),
 
     //output to data memory
-    .data_req_o            ( data_req_pmp       ),
-    .data_gnt_i            ( data_gnt_pmp       ),
+    .data_req_o            ( data_req_o         ),
+    .data_gnt_i            ( data_gnt_i         ),
     .data_rvalid_i         ( data_rvalid_i      ),
-    .data_err_i            ( data_err_pmp       ),
+    .data_err_i            ( 1'b0               ),
 
-    .data_addr_o           ( data_addr_pmp      ),
+    .data_addr_o           ( data_addr_o        ),
     .data_we_o             ( data_we_o          ),
     .data_atop_o           ( data_atop_o        ),
     .data_be_o             ( data_be_o          ),
@@ -974,8 +912,8 @@ module cv32e40p_core
   riscv_cs_registers
   #(
     .A_EXTENSION      ( A_EXTENSION           ),
-    .FPU              ( FPU                   ),
-    .APU              ( APU                   ),
+    .FPU              ( 0                     ),
+    .APU              ( 0                     ),
     .PULP_SECURE      ( PULP_SECURE           ),
     .USE_PMP          ( USE_PMP               ),
     .N_PMP_ENTRIES    ( N_PMP_ENTRIES         ),
@@ -1003,10 +941,10 @@ module cv32e40p_core
     .csr_op_i                ( csr_op             ),
     .csr_rdata_o             ( csr_rdata          ),
 
-    .frm_o                   ( frm_csr            ),
-    .fprec_o                 ( fprec_csr          ),
-    .fflags_i                ( fflags_csr         ),
-    .fflags_we_i             ( fflags_we          ),
+    //.frm_o                   ( frm_csr            ),
+    //.fprec_o                 ( fprec_csr          ),
+    //.fflags_i                ( fflags_csr         ),
+    //.fflags_we_i             ( fflags_we          ),
 
     // Interrupt related control signals
     .m_irq_enable_o          ( m_irq_enable       ),
@@ -1092,138 +1030,4 @@ module cv32e40p_core
 
   assign csr_addr_int = csr_num_e'(csr_access_ex ? alu_operand_b_ex[11:0] : '0);
 
-
-
-  ///////////////////////////
-  //   ____  __  __ ____   //
-  //  |  _ \|  \/  |  _ \  //
-  //  | |_) | |\/| | |_) | //
-  //  |  __/| |  | |  __/  //
-  //  |_|   |_|  |_|_|     //
-  //                       //
-  ///////////////////////////
-
-  generate
-  if(PULP_SECURE && USE_PMP) begin : RISCY_PMP
-  riscv_pmp
-  #(
-     .N_PMP_ENTRIES(N_PMP_ENTRIES)
-  )
-  pmp_unit_i
-  (
-    .clk                     ( clk                ),
-    .rst_n                   ( rst_ni             ),
-
-    .pmp_privil_mode_i       ( current_priv_lvl   ),
-
-    .pmp_addr_i              ( pmp_addr           ),
-    .pmp_cfg_i               ( pmp_cfg            ),
-
-
-    .data_req_i              ( data_req_pmp       ),
-    .data_addr_i             ( data_addr_pmp      ),
-    .data_we_i               ( data_we_o          ),
-    .data_gnt_o              ( data_gnt_pmp       ),
-
-    .data_req_o              ( data_req_o         ),
-    .data_gnt_i              ( data_gnt_i         ),
-    .data_addr_o             ( data_addr_o        ),
-    .data_err_o              ( data_err_pmp       ),
-    .data_err_ack_i          ( data_err_ack       ),
-
-    .instr_req_i             ( instr_req_pmp      ),
-    .instr_addr_i            ( instr_addr_pmp     ),
-    .instr_gnt_o             ( instr_gnt_pmp      ),
-
-    .instr_req_o             ( instr_req_o        ),
-    .instr_gnt_i             ( instr_gnt_i        ),
-    .instr_addr_o            ( instr_addr_o       ),
-    .instr_err_o             ( instr_err_pmp      )
-  );
-  end else begin
-    assign instr_req_o   = instr_req_pmp;
-    assign instr_addr_o  = instr_addr_pmp;
-    assign instr_gnt_pmp = instr_gnt_i;
-    assign instr_err_pmp = 1'b0;
-
-    assign data_req_o    = data_req_pmp;
-    assign data_addr_o   = data_addr_pmp;
-    assign data_gnt_pmp  = data_gnt_i;
-    assign data_err_pmp  = 1'b0;
-  end
-  endgenerate
-
-
-`ifndef VERILATOR
-`ifdef TRACE_EXECUTION
-
-  logic tracer_clk;
-  assign #1 tracer_clk = clk_i;
-
-  riscv_tracer riscv_tracer_i
-  (
-    .clk            ( tracer_clk                           ), // always-running clock for tracing
-    .rst_n          ( rst_ni                               ),
-
-    .fetch_enable   ( fetch_enable_i                       ),
-    .hart_id_i      ( hart_id_i                            ),
-
-    .pc             ( id_stage_i.pc_id_i                   ),
-    .instr          ( id_stage_i.instr                     ),
-    .controller_state_i ( id_stage_i.controller_i.ctrl_fsm_cs ),
-    .compressed     ( id_stage_i.is_compressed_i           ),
-    .id_valid       ( id_stage_i.id_valid_o                ),
-    .is_decoding    ( id_stage_i.is_decoding_o             ),
-    .pipe_flush     ( id_stage_i.controller_i.pipe_flush_i ),
-    .mret           ( id_stage_i.controller_i.mret_insn_i  ),
-    .uret           ( id_stage_i.controller_i.uret_insn_i  ),
-    .dret           ( id_stage_i.controller_i.dret_insn_i  ),
-    .ecall          ( id_stage_i.controller_i.ecall_insn_i ),
-    .ebreak         ( id_stage_i.controller_i.ebrk_insn_i  ),
-    .fence          ( id_stage_i.controller_i.fencei_insn_i),
-    .rs1_value      ( id_stage_i.operand_a_fw_id           ),
-    .rs2_value      ( id_stage_i.operand_b_fw_id           ),
-    .rs3_value      ( id_stage_i.alu_operand_c             ),
-    .rs2_value_vec  ( id_stage_i.alu_operand_b             ),
-
-    .rs1_is_fp      ( id_stage_i.regfile_fp_a              ),
-    .rs2_is_fp      ( id_stage_i.regfile_fp_b              ),
-    .rs3_is_fp      ( id_stage_i.regfile_fp_c              ),
-    .rd_is_fp       ( id_stage_i.regfile_fp_d              ),
-
-    .ex_valid       ( ex_valid                             ),
-    .ex_reg_addr    ( regfile_alu_waddr_fw                 ),
-    .ex_reg_we      ( regfile_alu_we_fw                    ),
-    .ex_reg_wdata   ( regfile_alu_wdata_fw                 ),
-
-    .ex_data_addr   ( data_addr_o                          ),
-    .ex_data_req    ( data_req_o                           ),
-    .ex_data_gnt    ( data_gnt_i                           ),
-    .ex_data_we     ( data_we_o                            ),
-    .ex_data_wdata  ( data_wdata_o                         ),
-    .data_misaligned ( data_misaligned                     ),
-
-    .wb_bypass      ( ex_stage_i.branch_in_ex_i            ),
-
-    .wb_valid       ( wb_valid                             ),
-    .wb_reg_addr    ( regfile_waddr_fw_wb_o                ),
-    .wb_reg_we      ( regfile_we_wb                        ),
-    .wb_reg_wdata   ( regfile_wdata                        ),
-
-    .imm_u_type     ( id_stage_i.imm_u_type                ),
-    .imm_uj_type    ( id_stage_i.imm_uj_type               ),
-    .imm_i_type     ( id_stage_i.imm_i_type                ),
-    .imm_iz_type    ( id_stage_i.imm_iz_type[11:0]         ),
-    .imm_z_type     ( id_stage_i.imm_z_type                ),
-    .imm_s_type     ( id_stage_i.imm_s_type                ),
-    .imm_sb_type    ( id_stage_i.imm_sb_type               ),
-    .imm_s2_type    ( id_stage_i.imm_s2_type               ),
-    .imm_s3_type    ( id_stage_i.imm_s3_type               ),
-    .imm_vs_type    ( id_stage_i.imm_vs_type               ),
-    .imm_vu_type    ( id_stage_i.imm_vu_type               ),
-    .imm_shuffle_type ( id_stage_i.imm_shuffle_type        ),
-    .imm_clip_type  ( id_stage_i.instr_rdata_i[11:7]       )
-  );
-`endif
-`endif
 endmodule
