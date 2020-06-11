@@ -139,8 +139,6 @@ module cv32e40p_core
 
 
   // IF/ID signals
-  //logic              is_hwlp_id;
-  //logic [N_HWLP-1:0] hwlp_dec_cnt_id;
   logic              instr_valid_id;
   logic [31:0]       instr_rdata_id;    // Instruction sampled inside IF stage
   logic              is_compressed_id;
@@ -281,25 +279,6 @@ module cv32e40p_core
 
   logic        csr_restore_dret_id;
 
-  // debug mode and dcsr configuration
-  logic        debug_mode;
-  logic [2:0]  debug_cause;
-  logic        debug_csr_save;
-  logic        debug_single_step;
-  logic        debug_ebreakm;
-  logic        debug_ebreaku;
-  logic        trigger_match;
-
-  // Hardware loop controller signals
-  //logic [N_HWLP-1:0] [31:0] hwlp_start;
-  //logic [N_HWLP-1:0] [31:0] hwlp_end;
-  //logic [N_HWLP-1:0] [31:0] hwlp_cnt;
-
-  // used to write from CS registers to hardware loop registers
-  //logic   [N_HWLP_BITS-1:0] csr_hwlp_regid;
-  //logic               [2:0] csr_hwlp_we;
-  //logic              [31:0] csr_hwlp_data;
-
   // Performance Counters
   logic        perf_imiss;
   logic        perf_jump;
@@ -337,44 +316,7 @@ module cv32e40p_core
   //                                                     |___/                                //
   //////////////////////////////////////////////////////////////////////////////////////////////
 
-  logic        clk;
-
-  logic        clock_en;
-
-
-  logic        sleeping;
-
-
-  assign core_busy_o = core_ctrl_firstfetch ? 1'b1 : core_busy_q;
-
-  // if we are sleeping on a barrier let's just wait on the instruction
-  // interface to finish loading instructions
-  assign core_busy_int = (PULP_CLUSTER_OVERRIDE & data_load_event_ex & data_req_o) ? (if_busy | apu_busy) : (if_busy | ctrl_busy | lsu_busy | apu_busy);
-
-  assign clock_en      = PULP_CLUSTER_OVERRIDE ? clock_en_i | core_busy_o : irq_pending | debug_req_i | core_busy_o;
-
-  assign sleeping      = ~core_busy_o;
-
-
-  always_ff @(posedge clk_i, negedge rst_ni)
-  begin
-    if (rst_ni == 1'b0) begin
-      core_busy_q <= 1'b0;
-    end else begin
-      core_busy_q <= core_busy_int;
-    end
-  end
-
-  // main clock gate of the core
-  // generates all clocks except the one for the debug unit which is
-  // independent
-  cv32e40p_clock_gate core_clock_gate_i
-  (
-    .clk_i        ( clk_i           ),
-    .en_i         ( clock_en        ),
-    .scan_cg_en_i ( scan_cg_en_i    ),
-    .clk_o        ( clk             )
-  );
+  assign core_busy_o = 1'b0;//core_ctrl_firstfetch ? 1'b1 : core_busy_q;
 
   //////////////////////////////////////////////////
   //   ___ _____   ____ _____  _    ____ _____    //
@@ -392,7 +334,7 @@ module cv32e40p_core
   )
   if_stage_i
   (
-    .clk                 ( clk               ),
+    .clk                 ( clk_i             ),
     .rst_n               ( rst_ni            ),
 
     // boot address
@@ -494,7 +436,7 @@ module cv32e40p_core
   )
   id_stage_i
   (
-    .clk                          ( clk                  ),
+    .clk                          ( clk_i                ),
     .rst_n                        ( rst_ni               ),
 
     .scan_cg_en_i                 ( scan_cg_en_i         ),
@@ -655,14 +597,14 @@ module cv32e40p_core
     .irq_id_o                     ( irq_id_o             ),
 
     // Debug Signal
-    .debug_mode_o                 ( debug_mode           ),
-    .debug_cause_o                ( debug_cause          ),
-    .debug_csr_save_o             ( debug_csr_save       ),
-    .debug_req_i                  ( debug_req_i          ),
-    .debug_single_step_i          ( debug_single_step    ),
-    .debug_ebreakm_i              ( debug_ebreakm        ),
-    .debug_ebreaku_i              ( debug_ebreaku        ),
-    .trigger_match_i              ( trigger_match        ),
+    //.debug_mode_o                 ( debug_mode           ),
+    //.debug_cause_o                ( debug_cause          ),
+    //.debug_csr_save_o             ( debug_csr_save       ),
+    .debug_req_i                  (1'b0),//debug_req_i          ),
+    //.debug_single_step_i          ( debug_single_step    ),
+    //.debug_ebreakm_i              ( debug_ebreakm        ),
+    //.debug_ebreaku_i              ( debug_ebreaku        ),
+    //.trigger_match_i              ( trigger_match        ),
 
     // Forward Signals
     .regfile_waddr_wb_i           ( regfile_waddr_fw_wb_o),  // Write address ex-wb pipeline
@@ -707,7 +649,7 @@ module cv32e40p_core
   ex_stage_i
   (
     // Global signals: Clock and active low asynchronous reset
-    .clk                        ( clk                          ),
+    .clk                        ( clk_i                        ),
     .rst_n                      ( rst_ni                       ),
 
     // Alu signals from ID stage
@@ -832,7 +774,7 @@ module cv32e40p_core
 
   riscv_load_store_unit  load_store_unit_i
   (
-    .clk                   ( clk                ),
+    .clk                   ( clk_i              ),
     .rst_n                 ( rst_ni             ),
 
     //output to data memory
@@ -898,7 +840,7 @@ module cv32e40p_core
   )
   cs_registers_i
   (
-    .clk                     ( clk                ),
+    .clk                     ( clk_i              ),
     .rst_n                   ( rst_ni             ),
 
     // Hart ID from outside
@@ -935,14 +877,14 @@ module cv32e40p_core
     .irq_pending_o           ( irq_pending        ), // IRQ to ID/Controller
     .irq_id_o                ( irq_id             ),
     // debug
-    .debug_mode_i            ( debug_mode         ),
-    .debug_cause_i           ( debug_cause        ),
-    .debug_csr_save_i        ( debug_csr_save     ),
-    .depc_o                  ( depc               ),
-    .debug_single_step_o     ( debug_single_step  ),
-    .debug_ebreakm_o         ( debug_ebreakm      ),
-    .debug_ebreaku_o         ( debug_ebreaku      ),
-    .trigger_match_o         ( trigger_match      ),
+    //.debug_mode_i            ( debug_mode         ),
+    //.debug_cause_i           ( debug_cause        ),
+    //.debug_csr_save_i        ( debug_csr_save     ),
+    //.depc_o                  ( depc               ),
+    //.debug_single_step_o     ( debug_single_step  ),
+    //.debug_ebreakm_o         ( debug_ebreakm      ),
+    //.debug_ebreaku_o         ( debug_ebreaku      ),
+    //.trigger_match_o         ( trigger_match      ),
 
     .priv_lvl_o              ( current_priv_lvl   ),
 
