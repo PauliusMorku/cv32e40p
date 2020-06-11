@@ -118,6 +118,8 @@ module cv32e40p_core
   localparam SHARED_INT_DIV      =  0;
   localparam SHARED_FP_DIVSQRT   =  0;
   localparam DEBUG_TRIGGER_EN    =  1;
+  localparam APU                 =  0;
+  localparam FPU_OVERRIDE        =  0;
 
   // Unused signals related to above unused parameters
   // Left in code (with their original _i, _o postfixes) for future design extensions;
@@ -201,26 +203,6 @@ module cv32e40p_core
   logic [ 1:0] mult_clpx_shift_ex;
   logic        mult_clpx_img_ex;
 
-  // APU
-  logic                        apu_en_ex;
-  logic [WAPUTYPE-1:0]         apu_type_ex;
-  logic [APU_NDSFLAGS_CPU-1:0] apu_flags_ex;
-  logic [APU_WOP_CPU-1:0]      apu_op_ex;
-  logic [1:0]                  apu_lat_ex;
-  logic [APU_NARGS_CPU-1:0][31:0]                 apu_operands_ex;
-  logic [5:0]                  apu_waddr_ex;
-
-  logic [2:0][5:0]             apu_read_regs;
-  logic [2:0]                  apu_read_regs_valid;
-  logic                        apu_read_dep;
-  logic [1:0][5:0]             apu_write_regs;
-  logic [1:0]                  apu_write_regs_valid;
-  logic                        apu_write_dep;
-
-  logic                        perf_apu_type;
-  logic                        perf_apu_cont;
-  logic                        perf_apu_dep;
-  logic                        perf_apu_wb;
 
   // Register Write Control
   logic [5:0]  regfile_waddr_ex;
@@ -270,7 +252,6 @@ module cv32e40p_core
 
   logic        id_valid;
   logic        ex_valid;
-  logic        wb_valid;
 
   logic        lsu_ready_ex;
   logic        lsu_ready_wb;
@@ -324,12 +305,6 @@ module cv32e40p_core
   //core busy signals
   logic        core_ctrl_firstfetch, core_busy_int, core_busy_q;
 
-  //pmp signals
-  logic  [N_PMP_ENTRIES-1:0] [31:0] pmp_addr;
-  logic  [N_PMP_ENTRIES-1:0] [7:0]  pmp_cfg;
-
-  logic                             data_err_ack;
-
   // interrupt signals
   logic        irq_pending;
   logic [5:0]  irq_id;
@@ -346,9 +321,6 @@ module cv32e40p_core
   // PULP_SECURE == 0
   assign irq_sec_i = 1'b0;
 
-  // APU master signals
-  assign apu_master_type_o  = '0;
-  assign apu_master_flags_o = '0;
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -411,7 +383,7 @@ module cv32e40p_core
   #(
     .N_HWLP              ( N_HWLP            ),
     .RDATA_WIDTH         ( INSTR_RDATA_WIDTH ),
-    .FPU                 ( 0                 )
+    .FPU                 ( FPU_OVERRIDE      )
   )
   if_stage_i
   (
@@ -499,8 +471,8 @@ module cv32e40p_core
     .PULP_SECURE                  ( PULP_SECURE          ),
     .USE_PMP                      ( USE_PMP              ),
     .A_EXTENSION                  ( A_EXTENSION          ),
-    .APU                          ( 0                    ),
-    .FPU                          ( 0                    ),
+    .APU                          ( APU                  ),
+    .FPU                          ( FPU_OVERRIDE         ),
     .PULP_ZFINX                   ( PULP_ZFINX           ),
     .FP_DIVSQRT                   ( FP_DIVSQRT           ),
     .SHARED_FP                    ( SHARED_FP            ),
@@ -608,22 +580,22 @@ module cv32e40p_core
     //.frm_i                        ( frm_csr                 ),
 
     // APU
-    .apu_en_ex_o                  ( apu_en_ex               ),
-    .apu_type_ex_o                ( apu_type_ex             ),
-    .apu_op_ex_o                  ( apu_op_ex               ),
-    .apu_lat_ex_o                 ( apu_lat_ex              ),
-    .apu_operands_ex_o            ( apu_operands_ex         ),
-    .apu_flags_ex_o               ( apu_flags_ex            ),
-    .apu_waddr_ex_o               ( apu_waddr_ex            ),
+    //.apu_en_ex_o                  ( apu_en_ex               ),
+    //.apu_type_ex_o                ( apu_type_ex             ),
+    //.apu_op_ex_o                  ( apu_op_ex               ),
+    //.apu_lat_ex_o                 ( apu_lat_ex              ),
+    //.apu_operands_ex_o            ( apu_operands_ex         ),
+    //.apu_flags_ex_o               ( apu_flags_ex            ),
+    //.apu_waddr_ex_o               ( apu_waddr_ex            ),
 
-    .apu_read_regs_o              ( apu_read_regs           ),
-    .apu_read_regs_valid_o        ( apu_read_regs_valid     ),
-    .apu_read_dep_i               ( apu_read_dep            ),
-    .apu_write_regs_o             ( apu_write_regs          ),
-    .apu_write_regs_valid_o       ( apu_write_regs_valid    ),
-    .apu_write_dep_i              ( apu_write_dep           ),
-    .apu_perf_dep_o               ( perf_apu_dep            ),
-    .apu_busy_i                   ( apu_busy                ),
+    //.apu_read_regs_o              ( apu_read_regs           ),
+    //.apu_read_regs_valid_o        ( apu_read_regs_valid     ),
+    .apu_read_dep_i               ( 1'b0),// apu_read_dep            ),
+    //.apu_write_regs_o             ( apu_write_regs          ),
+    //.apu_write_regs_valid_o       ( apu_write_regs_valid    ),
+    .apu_write_dep_i              ( 1'b0),// apu_write_dep           ),
+    //.apu_perf_dep_o               ( perf_apu_dep            ),
+    .apu_busy_i                   ( 1'b0),// apu_busy                ),
 
     // CSR ID/EX
     .csr_access_ex_o              ( csr_access_ex        ),
@@ -665,7 +637,7 @@ module cv32e40p_core
     .prepost_useincr_ex_o         ( useincr_addr_ex      ),
     .data_misaligned_i            ( data_misaligned      ),
     .data_err_i                   ( 1'b0                 ),
-    .data_err_ack_o               ( data_err_ack         ),
+    //.data_err_ack_o               ( data_err_ack         ),
 
 
     // Interrupt Signals
@@ -717,7 +689,7 @@ module cv32e40p_core
   /////////////////////////////////////////////////////
   riscv_ex_stage
   #(
-   .FPU              ( 0                  ),
+   .FPU              ( FPU_OVERRIDE       ),
    .FP_DIVSQRT       ( FP_DIVSQRT         ),
    .SHARED_FP        ( SHARED_FP          ),
    .SHARED_DSP_MULT  ( SHARED_DSP_MULT    ),
@@ -772,25 +744,25 @@ module cv32e40p_core
     //.fpu_fflags_we_o            ( fflags_we                    ),
 
     // APU
-    .apu_en_i                   ( apu_en_ex                    ),
-    .apu_op_i                   ( apu_op_ex                    ),
-    .apu_lat_i                  ( apu_lat_ex                   ),
-    .apu_operands_i             ( apu_operands_ex              ),
-    .apu_waddr_i                ( apu_waddr_ex                 ),
-    .apu_flags_i                ( apu_flags_ex                 ),
+    .apu_en_i                   ( 1'b0),//apu_en_ex                    ),
+    //.apu_op_i                   ( apu_op_ex                    ),
+    //.apu_lat_i                  ( apu_lat_ex                   ),
+    //.apu_operands_i             ( apu_operands_ex              ),
+    //.apu_waddr_i                ( apu_waddr_ex                 ),
+    //.apu_flags_i                ( apu_flags_ex                 ),
 
-    .apu_read_regs_i            ( apu_read_regs                ),
-    .apu_read_regs_valid_i      ( apu_read_regs_valid          ),
-    .apu_read_dep_o             ( apu_read_dep                 ),
-    .apu_write_regs_i           ( apu_write_regs               ),
-    .apu_write_regs_valid_i     ( apu_write_regs_valid         ),
-    .apu_write_dep_o            ( apu_write_dep                ),
+    //.apu_read_regs_i            ( apu_read_regs                ),
+    //.apu_read_regs_valid_i      ( apu_read_regs_valid          ),
+    //.apu_read_dep_o             ( apu_read_dep                 ),
+    //.apu_write_regs_i           ( apu_write_regs               ),
+    //.apu_write_regs_valid_i     ( apu_write_regs_valid         ),
+    //.apu_write_dep_o            ( apu_write_dep                ),
 
-    .apu_perf_type_o            ( perf_apu_type                ),
-    .apu_perf_cont_o            ( perf_apu_cont                ),
-    .apu_perf_wb_o              ( perf_apu_wb                  ),
-    .apu_ready_wb_o             ( apu_ready_wb                 ),
-    .apu_busy_o                 ( apu_busy                     ),
+    //.apu_perf_type_o            ( perf_apu_type                ),
+    //.apu_perf_cont_o            ( perf_apu_cont                ),
+    //.apu_perf_wb_o              ( perf_apu_wb                  ),
+    //.apu_ready_wb_o             ( apu_ready_wb                 ),
+    //.apu_busy_o                 ( apu_busy                     ),
 
     // apu-interconnect
     // handshake signals
@@ -896,8 +868,6 @@ module cv32e40p_core
     .busy_o                ( lsu_busy           )
   );
 
-  assign wb_valid = lsu_ready_wb & apu_ready_wb;
-
 
   //////////////////////////////////////
   //        ____ ____  ____           //
@@ -912,8 +882,8 @@ module cv32e40p_core
   riscv_cs_registers
   #(
     .A_EXTENSION      ( A_EXTENSION           ),
-    .FPU              ( 0                     ),
-    .APU              ( 0                     ),
+    .FPU              ( FPU_OVERRIDE          ),
+    .APU              ( APU                   ),
     .PULP_SECURE      ( PULP_SECURE           ),
     .USE_PMP          ( USE_PMP               ),
     .N_PMP_ENTRIES    ( N_PMP_ENTRIES         ),
@@ -935,7 +905,7 @@ module cv32e40p_core
     // boot address
     .boot_addr_i             ( boot_addr_i[31:1]  ),
     // Interface to CSRs (SRAM like)
-    .csr_access_i            ( csr_access         ),
+    .csr_access_i            ( csr_access_ex      ),
     .csr_addr_i              ( csr_addr           ),
     .csr_wdata_i             ( csr_wdata          ),
     .csr_op_i                ( csr_op             ),
@@ -971,8 +941,8 @@ module cv32e40p_core
 
     .priv_lvl_o              ( current_priv_lvl   ),
 
-    .pmp_addr_o              ( pmp_addr           ),
-    .pmp_cfg_o               ( pmp_cfg            ),
+    //.pmp_addr_o              ( pmp_addr           ),
+    //.pmp_cfg_o               ( pmp_cfg            ),
 
     .pc_if_i                 ( pc_if              ),
     .pc_id_i                 ( pc_id              ),
@@ -1012,10 +982,10 @@ module cv32e40p_core
     .jr_stall_i              ( perf_jr_stall      ),
     .pipeline_stall_i        ( perf_pipeline_stall ),
 
-    .apu_typeconflict_i      ( perf_apu_type      ),
-    .apu_contention_i        ( perf_apu_cont      ),
-    .apu_dep_i               ( perf_apu_dep       ),
-    .apu_wb_i                ( perf_apu_wb        ),
+    //.apu_typeconflict_i      ( perf_apu_type      ),
+    //.apu_contention_i        ( perf_apu_cont      ),
+    //.apu_dep_i               ( perf_apu_dep       ),
+    //.apu_wb_i                ( perf_apu_wb        ),
 
     .mem_load_i              ( data_req_o & data_gnt_i & (~data_we_o) ),
     .mem_store_i             ( data_req_o & data_gnt_i & data_we_o    )
