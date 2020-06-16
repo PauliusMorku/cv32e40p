@@ -36,10 +36,10 @@ import riscv_defines::*;
 
 module cv32e40p_core
 #(
-  parameter PULP_HWLP           =  0,
+  parameter PULP_HWLP           =  0,                   // Hardware Loop (not supported yet; will be supported)
   parameter PULP_CLUSTER        =  0,
-  parameter FPU                 =  0,
-  parameter PULP_ZFINX          =  0,
+  parameter FPU                 =  0,                   // Floating Point Unit (interfaced via APU interface)
+  parameter PULP_ZFINX          =  0,                   // Float-in-General Purpose registers
   parameter NUM_MHPMCOUNTERS    =  1
 )
 (
@@ -118,7 +118,6 @@ module cv32e40p_core
   localparam SHARED_INT_DIV      =  0;
   localparam SHARED_FP_DIVSQRT   =  0;
   localparam DEBUG_TRIGGER_EN    =  1;
-  localparam APU                 =  0;
   
   localparam PULP_HWLP_OVERRIDE           =  0;
   localparam PULP_CLUSTER_OVERRIDE        =  0;
@@ -126,8 +125,14 @@ module cv32e40p_core
   localparam PULP_ZFINX_OVERRIDE          =  0;
   localparam NUM_MHPMCOUNTERS_OVERRIDE    =  0;
 
-  // Unused signals related to above unused parameters
-  // Left in code (with their original _i, _o postfixes) for future design extensions;
+  // PULP bus interface behavior
+  // If enabled will allow non-stable address phase signals during waited instructions requests and
+  // will re-introduce combinatorial paths from instr_rvalid_i to instr_req_o and from from data_rvalid_i 
+  // to data_req_o 
+  localparam PULP_OBI            = 0;
+
+  // Unused signals related to above unused parameters 
+  // Left in code (with their original _i, _o postfixes) for future design extensions; 
   // these used to be former inputs/outputs of RI5CY
 
   logic [5:0]                     data_atop_o;  // atomic operation, only active if parameter `A_EXTENSION != 0`
@@ -136,9 +141,12 @@ module cv32e40p_core
 
   localparam N_HWLP      = 2;
   localparam N_HWLP_BITS = $clog2(N_HWLP);
+  localparam APU         = 0;
 
 
   // IF/ID signals
+  //logic              is_hwlp_id;
+  //logic [N_HWLP-1:0] hwlp_dec_cnt_id;
   logic              instr_valid_id;
   logic [31:0]       instr_rdata_id;    // Instruction sampled inside IF stage
   logic              is_compressed_id;
@@ -228,8 +236,12 @@ module cv32e40p_core
   logic [1:0]  mtvec_mode;
   logic [1:0]  utvec_mode;
 
+  logic        csr_access;
+  logic [1:0]  csr_op;
+  csr_num_e    csr_addr;
   csr_num_e    csr_addr_int;
   logic [31:0] csr_rdata;
+  logic [31:0] csr_wdata;
   PrivLvl_t    current_priv_lvl;
 
   // Data Memory Control:  From ID stage (id-ex pipe) <--> load store unit
@@ -251,9 +263,12 @@ module cv32e40p_core
 
   logic        id_valid;
   logic        ex_valid;
+  //logic        wb_valid;
 
   logic        lsu_ready_ex;
   logic        lsu_ready_wb;
+
+  //logic        apu_ready_wb;
 
   // Signals between instruction core interface and pipe (if and id stages)
   logic        instr_req_int;    // Id stage asserts a req to instruction core interface
@@ -288,6 +303,8 @@ module cv32e40p_core
   logic [5:0]  irq_id;
 
   //Simchecker signal
+  //logic is_interrupt;
+  //assign is_interrupt = (pc_mux_id == PC_EXCEPTION) && (exc_pc_mux_id == EXC_PC_IRQ);
   assign m_exc_vec_pc_mux_id = (mtvec_mode == 2'b0) ? 6'h0 : exc_cause;
   assign u_exc_vec_pc_mux_id = (utvec_mode == 2'b0) ? 6'h0 : exc_cause;
 
@@ -303,6 +320,8 @@ module cv32e40p_core
   //////////////////////////////////////////////////
   riscv_if_stage
   #(
+    .PULP_HWLP           ( PULP_HWLP         ),
+    .PULP_OBI            ( PULP_OBI          ),
     .N_HWLP              ( N_HWLP            ),
     .RDATA_WIDTH         ( INSTR_RDATA_WIDTH ),
     .FPU                 ( FPU_OVERRIDE      )
@@ -332,7 +351,8 @@ module cv32e40p_core
     .instr_gnt_i         ( instr_gnt_i       ),
     .instr_rvalid_i      ( instr_rvalid_i    ),
     .instr_rdata_i       ( instr_rdata_i     ),
-    .instr_err_pmp_i     ( 1'b0              ),
+    .instr_err_i         ( 1'b0              ),  // Bus error (not used yet)
+    .instr_err_pmp_i     ( 1'b0),//instr_err_pmp     ),  // PMP error
 
     // outputs to ID stage
     //.hwlp_dec_cnt_id_o   ( hwlp_dec_cnt_id   ),
@@ -512,12 +532,12 @@ module cv32e40p_core
 
     //.apu_read_regs_o              ( apu_read_regs           ),
     //.apu_read_regs_valid_o        ( apu_read_regs_valid     ),
-    .apu_read_dep_i               ( 1'b0),// apu_read_dep            ),
+    .apu_read_dep_i               ( 1'b0),//apu_read_dep            ),
     //.apu_write_regs_o             ( apu_write_regs          ),
     //.apu_write_regs_valid_o       ( apu_write_regs_valid    ),
-    .apu_write_dep_i              ( 1'b0),// apu_write_dep           ),
+    .apu_write_dep_i              ( 1'b0),//apu_write_dep           ),
     //.apu_perf_dep_o               ( perf_apu_dep            ),
-    .apu_busy_i                   ( 1'b0),// apu_busy                ),
+    .apu_busy_i                   ( 1'b0),//apu_busy                ),
 
     // CSR ID/EX
     .csr_access_ex_o              ( csr_access_ex        ),
@@ -558,14 +578,14 @@ module cv32e40p_core
 
     .prepost_useincr_ex_o         ( useincr_addr_ex      ),
     .data_misaligned_i            ( data_misaligned      ),
-    .data_err_i                   ( 1'b0                 ),
+    .data_err_i                   ( 1'b0),//data_err_pmp         ),
     //.data_err_ack_o               ( data_err_ack         ),
 
 
     // Interrupt Signals
     .irq_pending_i                ( irq_pending          ), // incoming interrupts
     .irq_id_i                     ( irq_id               ),
-    .irq_sec_i                    ( 1'b0                 ),
+    .irq_sec_i                    ( 1'b0),//(PULP_SECURE) ? irq_sec_i : 1'b0 ),
     .m_irq_enable_i               ( m_irq_enable         ),
     .u_irq_enable_i               ( u_irq_enable         ),
     .irq_ack_o                    ( irq_ack_o            ),
@@ -575,7 +595,7 @@ module cv32e40p_core
     //.debug_mode_o                 ( debug_mode           ),
     //.debug_cause_o                ( debug_cause          ),
     //.debug_csr_save_o             ( debug_csr_save       ),
-    .debug_req_i                  (1'b0),//debug_req_i          ),
+    .debug_req_i                  ( 1'b0),//debug_req_i          ),
     //.debug_single_step_i          ( debug_single_step    ),
     //.debug_ebreakm_i              ( debug_ebreakm        ),
     //.debug_ebreaku_i              ( debug_ebreaku        ),
@@ -730,7 +750,7 @@ module cv32e40p_core
     // stall control
     .is_decoding_i              ( is_decoding                  ),
     .lsu_ready_ex_i             ( lsu_ready_ex                 ),
-    .lsu_err_i                  ( 1'b0                         ),
+    .lsu_err_i                  ( 1'b0),//data_err_pmp           ),
 
     .ex_ready_o                 ( ex_ready                     ),
     .ex_valid_o                 ( ex_valid                     ),
@@ -747,7 +767,11 @@ module cv32e40p_core
   //                                                                                    //
   ////////////////////////////////////////////////////////////////////////////////////////
 
-  riscv_load_store_unit  load_store_unit_i
+  riscv_load_store_unit
+  #(
+    .PULP_OBI              ( PULP_OBI           )
+  )
+  load_store_unit_i
   (
     .clk                   ( clk_i              ),
     .rst_n                 ( rst_ni             ),
@@ -756,7 +780,8 @@ module cv32e40p_core
     .data_req_o            ( data_req_o         ),
     .data_gnt_i            ( data_gnt_i         ),
     .data_rvalid_i         ( data_rvalid_i      ),
-    .data_err_i            ( 1'b0               ),
+    .data_err_i            ( 1'b0               ),  // Bus error (not used yet)
+    .data_err_pmp_i        ( 1'b0),//data_err_pmp       ),  // PMP error
 
     .data_addr_o           ( data_addr_o        ),
     .data_we_o             ( data_we_o          ),
@@ -784,9 +809,8 @@ module cv32e40p_core
 
     // control signals
     .lsu_ready_ex_o        ( lsu_ready_ex       ),
-    .lsu_ready_wb_o        ( lsu_ready_wb       ),
+    .lsu_ready_wb_o        ( lsu_ready_wb       )
 
-    .ex_valid_i            ( ex_valid           )
     //.busy_o                ( lsu_busy           )
   );
 
@@ -827,10 +851,10 @@ module cv32e40p_core
     // boot address
     .boot_addr_i             ( boot_addr_i[31:1]  ),
     // Interface to CSRs (SRAM like)
-    .csr_access_i            ( csr_access_ex      ),
-    .csr_addr_i              ( csr_addr_int       ),
-    .csr_wdata_i             ( alu_operand_a_ex   ),
-    .csr_op_i                ( csr_op_ex          ),
+    .csr_access_i            ( csr_access         ),
+    .csr_addr_i              ( csr_addr           ),
+    .csr_wdata_i             ( csr_wdata          ),
+    .csr_op_i                ( csr_op             ),
     .csr_rdata_o             ( csr_rdata          ),
 
     //.frm_o                   ( frm_csr            ),
@@ -915,6 +939,11 @@ module cv32e40p_core
   );
 
   //  CSR access
+  assign csr_access   =  csr_access_ex;
+  assign csr_addr     =  csr_addr_int;
+  assign csr_wdata    =  alu_operand_a_ex;
+  assign csr_op       =  csr_op_ex;
+
   assign csr_addr_int = csr_num_e'(csr_access_ex ? alu_operand_b_ex[11:0] : '0);
 
 endmodule
