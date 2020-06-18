@@ -28,11 +28,11 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-import apu_core_package::*;
+import cv32e40p_apu_core_package::*;
 
-`include "riscv_config.sv"
+`include "cv32e40p_config.sv"
 
-import riscv_defines::*;
+import cv32e40p_defines::*;
 
 module cv32e40p_core
 #(
@@ -88,13 +88,9 @@ module cv32e40p_core
   input logic [APU_NUSFLAGS_CPU-1:0]     apu_master_flags_i,
 
   // Interrupt inputs
+  input  logic [63:0] irq_i,                    // CLINT interrupts + CLINT extension interrupts
   output logic        irq_ack_o,
   output logic [5:0]  irq_id_o,
-
-  input  logic        irq_software_i,
-  input  logic        irq_timer_i,
-  input  logic        irq_external_i,
-  input  logic [47:0] irq_fast_i,
 
   // Debug Interface
   input  logic        debug_req_i,
@@ -141,7 +137,7 @@ module cv32e40p_core
 
   localparam N_HWLP      = 2;
   localparam N_HWLP_BITS = $clog2(N_HWLP);
-  localparam APU         = 0;
+  localparam APU         = 0;//((SHARED_DSP_MULT==1) | (SHARED_INT_DIV==1) | (FPU==1)) ? 1 : 0;
 
 
   // IF/ID signals
@@ -214,6 +210,33 @@ module cv32e40p_core
   logic [ 1:0] mult_clpx_shift_ex;
   logic        mult_clpx_img_ex;
 
+  // FPU
+  //logic [C_PC-1:0]            fprec_csr;
+  //logic [C_RM-1:0]            frm_csr;
+  //logic [C_FFLAG-1:0]         fflags;
+  //logic [C_FFLAG-1:0]         fflags_csr;
+  //logic                       fflags_we;
+
+  // APU
+  //logic                        apu_en_ex;
+  //logic [WAPUTYPE-1:0]         apu_type_ex;
+  //logic [APU_NDSFLAGS_CPU-1:0] apu_flags_ex;
+  //logic [APU_WOP_CPU-1:0]      apu_op_ex;
+  //logic [1:0]                  apu_lat_ex;
+  //logic [APU_NARGS_CPU-1:0][31:0]                 apu_operands_ex;
+  //logic [5:0]                  apu_waddr_ex;
+
+  //logic [2:0][5:0]             apu_read_regs;
+  //logic [2:0]                  apu_read_regs_valid;
+  //logic                        apu_read_dep;
+  //logic [1:0][5:0]             apu_write_regs;
+  //logic [1:0]                  apu_write_regs_valid;
+  //logic                        apu_write_dep;
+
+  //logic                        perf_apu_type;
+  //logic                        perf_apu_cont;
+  //logic                        perf_apu_dep;
+  //logic                        perf_apu_wb;
 
   // Register Write Control
   logic [5:0]  regfile_waddr_ex;
@@ -288,6 +311,25 @@ module cv32e40p_core
 
   logic        csr_restore_dret_id;
 
+  // debug mode and dcsr configuration
+  //logic        debug_mode;
+  //logic [2:0]  debug_cause;
+  //logic        debug_csr_save;
+  //logic        debug_single_step;
+  //logic        debug_ebreakm;
+  //logic        debug_ebreaku;
+  //logic        trigger_match;
+
+  // Hardware loop controller signals
+  //logic [N_HWLP-1:0] [31:0] hwlp_start;
+  //logic [N_HWLP-1:0] [31:0] hwlp_end;
+  //logic [N_HWLP-1:0] [31:0] hwlp_cnt;
+
+  // used to write from CS registers to hardware loop registers
+  //logic   [N_HWLP_BITS-1:0] csr_hwlp_regid;
+  //logic               [2:0] csr_hwlp_we;
+  //logic              [31:0] csr_hwlp_data;
+
   // Performance Counters
   logic        perf_imiss;
   logic        perf_jump;
@@ -296,7 +338,21 @@ module cv32e40p_core
   logic        perf_pipeline_stall;
 
   //core busy signals
-  //logic        core_ctrl_firstfetch, core_busy_int, core_busy_q;
+  logic        core_ctrl_firstfetch, core_busy_int, core_busy_q;
+
+  //pmp signals
+  //logic  [N_PMP_ENTRIES-1:0] [31:0] pmp_addr;
+  //logic  [N_PMP_ENTRIES-1:0] [7:0]  pmp_cfg;
+
+  //logic                             data_req_pmp;
+  //logic [31:0]                      data_addr_pmp;
+  //logic                             data_gnt_pmp;
+  //logic                             data_err_pmp;
+  //logic                             data_err_ack;
+  //logic                             instr_req_pmp;
+  //logic                             instr_gnt_pmp;
+  //logic [31:0]                      instr_addr_pmp;
+  //logic                             instr_err_pmp;
 
   // interrupt signals
   logic        irq_pending;
@@ -318,7 +374,7 @@ module cv32e40p_core
   //  |___|_|     |____/ |_/_/   \_\____|_____|   //
   //                                              //
   //////////////////////////////////////////////////
-  riscv_if_stage
+  cv32e40p_if_stage
   #(
     .PULP_HWLP           ( PULP_HWLP         ),
     .PULP_OBI            ( PULP_OBI          ),
@@ -406,7 +462,7 @@ module cv32e40p_core
   //  |___|____/  |____/ |_/_/   \_\____|_____|  //
   //                                             //
   /////////////////////////////////////////////////
-  riscv_id_stage
+  cv32e40p_id_stage
   #(
     .PULP_HWLP                    ( PULP_HWLP_OVERRIDE   ),
     .N_HWLP                       ( N_HWLP               ),
@@ -629,7 +685,7 @@ module cv32e40p_core
   //  |_____/_/\_\ |____/ |_/_/   \_\____|_____|     //
   //                                                 //
   /////////////////////////////////////////////////////
-  riscv_ex_stage
+  cv32e40p_ex_stage
   #(
    .FPU              ( FPU_OVERRIDE       ),
    .FP_DIVSQRT       ( FP_DIVSQRT         ),
@@ -767,7 +823,7 @@ module cv32e40p_core
   //                                                                                    //
   ////////////////////////////////////////////////////////////////////////////////////////
 
-  riscv_load_store_unit
+  cv32e40p_load_store_unit
   #(
     .PULP_OBI              ( PULP_OBI           )
   )
@@ -814,6 +870,8 @@ module cv32e40p_core
     //.busy_o                ( lsu_busy           )
   );
 
+  //assign wb_valid = lsu_ready_wb & apu_ready_wb;
+
 
   //////////////////////////////////////
   //        ____ ____  ____           //
@@ -825,7 +883,7 @@ module cv32e40p_core
   //   Control and Status Registers   //
   //////////////////////////////////////
 
-  riscv_cs_registers
+  cv32e40p_cs_registers
   #(
     .A_EXTENSION      ( A_EXTENSION           ),
     .FPU              ( FPU_OVERRIDE          ),
@@ -869,11 +927,11 @@ module cv32e40p_core
     .sec_lvl_o               ( sec_lvl_o          ),
     .mepc_o                  ( mepc               ),
     .uepc_o                  ( uepc               ),
-    .irq_software_i          ( irq_software_i     ),
-    .irq_timer_i             ( irq_timer_i        ),
-    .irq_external_i          ( irq_external_i     ),
-    .irq_fast_i              ( irq_fast_i         ),
-    .irq_pending_o           ( irq_pending        ), // IRQ to ID/Controller
+    .irq_software_i          ( irq_i[3]           ),    // CLINT MSI (RISC-V Privileged Spec)
+    .irq_timer_i             ( irq_i[7]           ),    // CLINT MTI (RISC-V Privileged Spec)
+    .irq_external_i          ( irq_i[11]          ),    // CLINT MEI (RISC-V Privileged Spec)
+    .irq_fast_i              ( irq_i[63:16]       ),
+    .irq_pending_o           ( irq_pending        ),    // IRQ to ID/Controller
     .irq_id_o                ( irq_id             ),
     // debug
     //.debug_mode_i            ( debug_mode         ),
@@ -935,7 +993,6 @@ module cv32e40p_core
 
     .mem_load_i              ( data_req_o & data_gnt_i & (~data_we_o) ),
     .mem_store_i             ( data_req_o & data_gnt_i & data_we_o    )
-
   );
 
   //  CSR access
