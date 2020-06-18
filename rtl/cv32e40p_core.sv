@@ -655,7 +655,7 @@ module cv32e40p_core
     //.debug_single_step_i          ( debug_single_step    ),
     //.debug_ebreakm_i              ( debug_ebreakm        ),
     //.debug_ebreaku_i              ( debug_ebreaku        ),
-    //.trigger_match_i              ( trigger_match        ),
+    .trigger_match_i              ( 1'b0),//trigger_match        ),
 
     // Forward Signals
     .regfile_waddr_wb_i           ( regfile_waddr_fw_wb_o),  // Write address ex-wb pipeline
