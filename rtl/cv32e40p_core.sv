@@ -428,7 +428,7 @@ module cv32e40p_core
     .mepc_i              ( mepc              ), // exception return address
     .uepc_i              ( uepc              ), // exception return address
 
-    .depc_i              ( depc              ), // debug return address
+    //.depc_i              ( depc              ), // debug return address
 
     .pc_mux_i            ( pc_mux_id         ), // sel for pc multiplexer
     .exc_pc_mux_i        ( exc_pc_mux_id     ),
@@ -490,7 +490,7 @@ module cv32e40p_core
     .clk                          ( clk_i                ),
     .rst_n                        ( rst_ni               ),
 
-    .scan_cg_en_i                 ( scan_cg_en_i         ),
+    .scan_cg_en_i                 ( 1'b1),//scan_cg_en_i         ),
 
     // Processor Enable
     .fetch_enable_i               ( fetch_enable_i       ),
