@@ -419,7 +419,7 @@ module cv32e40p_core
     .illegal_c_insn_id_o ( illegal_c_insn_id ),
     .pc_if_o             ( pc_if             ),
     .pc_id_o             ( pc_id             ),
-    .is_fetch_failed_o   ( is_fetch_failed_id ),
+    .is_fetch_failed_o   ( is_fetch_failed_id ), // OneSpin: const 0
 
     // control signals
     .clear_instr_valid_i ( clear_instr_valid ),
