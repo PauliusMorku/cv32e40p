@@ -131,9 +131,9 @@ module cv32e40p_core
   // Left in code (with their original _i, _o postfixes) for future design extensions; 
   // these used to be former inputs/outputs of RI5CY
 
-  logic [5:0]                     data_atop_o;  // atomic operation, only active if parameter `A_EXTENSION != 0`
-  logic                           irq_sec_i;
-  logic                           sec_lvl_o;
+  //logic [5:0]                     data_atop_o;  // atomic operation, only active if parameter `A_EXTENSION != 0`
+  //logic                           irq_sec_i;
+  //logic                           sec_lvl_o;
 
   localparam N_HWLP      = 2;
   localparam N_HWLP_BITS = $clog2(N_HWLP);
@@ -274,7 +274,7 @@ module cv32e40p_core
   logic [1:0]  data_sign_ext_ex;
   logic [1:0]  data_reg_offset_ex;
   logic        data_req_ex;
-  logic        data_load_event_ex;
+  //logic        data_load_event_ex;
   logic        data_misaligned_ex;
 
   logic [31:0] lsu_rdata;
@@ -299,7 +299,7 @@ module cv32e40p_core
   // Interrupts
   logic        m_irq_enable, u_irq_enable;
   logic        csr_irq_sec;
-  logic [31:0] mepc, uepc, depc;
+  logic [31:0] mepc, uepc;//, depc;
 
   logic        csr_save_cause;
   logic        csr_save_if;
@@ -338,7 +338,7 @@ module cv32e40p_core
   logic        perf_pipeline_stall;
 
   //core busy signals
-  logic        core_ctrl_firstfetch, core_busy_int, core_busy_q;
+  //logic        core_ctrl_firstfetch, core_busy_int, core_busy_q;
 
   //pmp signals
   //logic  [N_PMP_ENTRIES-1:0] [31:0] pmp_addr;
@@ -391,7 +391,7 @@ module cv32e40p_core
     .boot_addr_i         ( boot_addr_i[31:1] ),
 
     // debug mode halt address
-    .dm_halt_addr_i      ( dm_halt_addr_i[31:2] ),
+    //.dm_halt_addr_i      ( dm_halt_addr_i[31:2] ),
 
     // trap vector location
     .m_trap_base_addr_i  ( mtvec             ),
@@ -628,7 +628,7 @@ module cv32e40p_core
     .data_type_ex_o               ( data_type_ex         ), // to load store unit
     .data_sign_ext_ex_o           ( data_sign_ext_ex     ), // to load store unit
     .data_reg_offset_ex_o         ( data_reg_offset_ex   ), // to load store unit
-    .data_load_event_ex_o         ( data_load_event_ex   ), // to load store unit
+    //.data_load_event_ex_o         ( data_load_event_ex   ), // to load store unit
 
     .data_misaligned_ex_o         ( data_misaligned_ex   ), // to load store unit
 
@@ -841,7 +841,7 @@ module cv32e40p_core
 
     .data_addr_o           ( data_addr_o        ),
     .data_we_o             ( data_we_o          ),
-    .data_atop_o           ( data_atop_o        ),
+    //.data_atop_o           ( data_atop_o        ),
     .data_be_o             ( data_be_o          ),
     .data_wdata_o          ( data_wdata_o       ),
     .data_rdata_i          ( data_rdata_i       ),
@@ -924,7 +924,7 @@ module cv32e40p_core
     .m_irq_enable_o          ( m_irq_enable       ),
     .u_irq_enable_o          ( u_irq_enable       ),
     .csr_irq_sec_i           ( csr_irq_sec        ),
-    .sec_lvl_o               ( sec_lvl_o          ),
+    //.sec_lvl_o               ( sec_lvl_o          ),
     .mepc_o                  ( mepc               ),
     .uepc_o                  ( uepc               ),
     .irq_software_i          ( irq_i[3]           ),    // CLINT MSI (RISC-V Privileged Spec)
