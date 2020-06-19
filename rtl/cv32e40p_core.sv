@@ -519,7 +519,7 @@ module cv32e40p_core
     .trap_addr_mux_o              ( trap_addr_mux        ),
     .illegal_c_insn_i             ( illegal_c_insn_id    ),
     .is_compressed_i              ( is_compressed_id     ),
-    .is_fetch_failed_i            ( is_fetch_failed_id   ),
+    .is_fetch_failed_i            ( is_fetch_failed_id   ), // OneSpin: const 0
 
     .pc_if_i                      ( pc_if                ),
     .pc_id_i                      ( pc_id                ),
