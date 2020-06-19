@@ -139,7 +139,6 @@ module cv32e40p_core
   localparam N_HWLP_BITS = $clog2(N_HWLP);
   localparam APU         = 0;//((SHARED_DSP_MULT==1) | (SHARED_INT_DIV==1) | (FPU==1)) ? 1 : 0;
 
-
   // IF/ID signals
   //logic              is_hwlp_id;
   //logic [N_HWLP-1:0] hwlp_dec_cnt_id;
@@ -493,7 +492,7 @@ module cv32e40p_core
     .scan_cg_en_i                 ( 1'b1),//scan_cg_en_i         ),
 
     // Processor Enable
-    .fetch_enable_i               ( fetch_enable_i       ),
+    .fetch_enable_i               ( 1'b1),//fetch_enable_i       ),
     //.ctrl_busy_o                  ( ctrl_busy            ),
     //.core_ctrl_firstfetch_o       ( core_ctrl_firstfetch ),
     .is_decoding_o                ( is_decoding          ),
@@ -639,13 +638,13 @@ module cv32e40p_core
 
 
     // Interrupt Signals
-    .irq_pending_i                ( irq_pending          ), // incoming interrupts
+    .irq_pending_i                ( 1'b0),//irq_pending          ), // incoming interrupts
     .irq_id_i                     ( irq_id               ),
     .irq_sec_i                    ( 1'b0),//(PULP_SECURE) ? irq_sec_i : 1'b0 ),
-    .m_irq_enable_i               ( m_irq_enable         ),
-    .u_irq_enable_i               ( u_irq_enable         ),
-    .irq_ack_o                    ( irq_ack_o            ),
-    .irq_id_o                     ( irq_id_o             ),
+    .m_irq_enable_i               ( 1'b0),//m_irq_enable         ),
+    .u_irq_enable_i               ( 1'b0),//u_irq_enable         ),
+    //.irq_ack_o                    ( irq_ack_o            ),
+    //.irq_id_o                     ( irq_id_o             ),
 
     // Debug Signal
     //.debug_mode_o                 ( debug_mode           ),
@@ -901,7 +900,7 @@ module cv32e40p_core
     .rst_n                   ( rst_ni             ),
 
     // Hart ID from outside
-    .hart_id_i               ( hart_id_i          ),
+    //.hart_id_i               ( hart_id_i          ),
     .mtvec_o                 ( mtvec              ),
     .utvec_o                 ( utvec              ),
     .mtvec_mode_o            ( mtvec_mode         ),
@@ -927,10 +926,10 @@ module cv32e40p_core
     //.sec_lvl_o               ( sec_lvl_o          ),
     .mepc_o                  ( mepc               ),
     .uepc_o                  ( uepc               ),
-    .irq_software_i          ( irq_i[3]           ),    // CLINT MSI (RISC-V Privileged Spec)
-    .irq_timer_i             ( irq_i[7]           ),    // CLINT MTI (RISC-V Privileged Spec)
-    .irq_external_i          ( irq_i[11]          ),    // CLINT MEI (RISC-V Privileged Spec)
-    .irq_fast_i              ( irq_i[63:16]       ),
+    .irq_software_i          ( 1'b0),//irq_i[3]           ),    // CLINT MSI (RISC-V Privileged Spec)
+    .irq_timer_i             ( 1'b0),//irq_i[7]           ),    // CLINT MTI (RISC-V Privileged Spec)
+    .irq_external_i          ( 1'b0),//irq_i[11]          ),    // CLINT MEI (RISC-V Privileged Spec)
+    .irq_fast_i              ( {48{1'b0}}),//irq_i[63:16]       ),
     .irq_pending_o           ( irq_pending        ),    // IRQ to ID/Controller
     .irq_id_o                ( irq_id             ),
     // debug
@@ -1002,5 +1001,5 @@ module cv32e40p_core
   assign csr_op       =  csr_op_ex;
 
   assign csr_addr_int = csr_num_e'(csr_access_ex ? alu_operand_b_ex[11:0] : '0);
-
+  
 endmodule

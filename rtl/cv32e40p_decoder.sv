@@ -2366,7 +2366,7 @@ module cv32e40p_decoder
               12'h105:  // wfi
               begin
                 // flush pipeline
-                pipe_flush_o = 1'b1;
+                //pipe_flush_o = 1'b1;
               end
 
               default:
