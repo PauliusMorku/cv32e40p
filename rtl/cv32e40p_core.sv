@@ -40,7 +40,7 @@ module cv32e40p_core
   parameter PULP_CLUSTER        =  0,
   parameter FPU                 =  0,                   // Floating Point Unit (interfaced via APU interface)
   parameter PULP_ZFINX          =  0,                   // Float-in-General Purpose registers
-  parameter NUM_MHPMCOUNTERS    =  1
+  parameter NUM_MHPMCOUNTERS    =  0
 )
 (
   // Clock and Reset
