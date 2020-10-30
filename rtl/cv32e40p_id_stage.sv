@@ -27,19 +27,10 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-import cv32e40p_defines::*;
-import cv32e40p_apu_core_package::*;
-
-
-// Source/Destination register instruction index
-`define REG_S1 19:15
-`define REG_S2 24:20
-`define REG_S4 31:27
-`define REG_D  11:07
-
-module cv32e40p_id_stage
+module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
 #(
-  parameter PULP_HWLP         =  0,                     // PULP Hardware Loop present
+  parameter PULP_XPULP        =  1,                     // PULP ISA Extension (including PULP specific CSRs and hardware loop, excluding p.elw)
+  parameter PULP_CLUSTER      =  0,
   parameter N_HWLP            =  2,
   parameter N_HWLP_BITS       =  $clog2(N_HWLP),
   parameter PULP_SECURE       =  0,
@@ -48,13 +39,6 @@ module cv32e40p_id_stage
   parameter APU               =  0,
   parameter FPU               =  0,
   parameter PULP_ZFINX        =  0,
-  parameter FP_DIVSQRT        =  0,
-  parameter SHARED_FP         =  0,
-  parameter SHARED_DSP_MULT   =  0,
-  parameter SHARED_INT_MULT   =  0,
-  parameter SHARED_INT_DIV    =  0,
-  parameter SHARED_FP_DIVSQRT =  0,
-  parameter WAPUTYPE          =  0,
   parameter APU_NARGS_CPU     =  3,
   parameter APU_WOP_CPU       =  6,
   parameter APU_NDSFLAGS_CPU  = 15,
@@ -62,23 +46,22 @@ module cv32e40p_id_stage
   parameter DEBUG_TRIGGER_EN  =  1
 )
 (
-    input  logic        clk,
+    input  logic        clk,                    // Gated clock
+    input  logic        clk_ungated_i,          // Ungated clock
     input  logic        rst_n,
 
     input  logic        scan_cg_en_i,
 
     input  logic        fetch_enable_i,
     output logic        ctrl_busy_o,
-    output logic        core_ctrl_firstfetch_o,
     output logic        is_decoding_o,
 
     // Interface to IF stage
-    input  logic [N_HWLP-1:0] hwlp_dec_cnt_i,
-    input  logic              is_hwlp_i,
     input  logic              instr_valid_i,
     input  logic       [31:0] instr_rdata_i,      // comes from pipeline of IF stage
     output logic              instr_req_o,
-
+    input  logic              is_compressed_i,
+    input  logic              illegal_c_insn_i,
 
     // Jumps and branches
     output logic        branch_in_ex_o,
@@ -88,15 +71,13 @@ module cv32e40p_id_stage
     // IF and ID stage signals
     output logic        clear_instr_valid_o,
     output logic        pc_set_o,
-    output logic [2:0]  pc_mux_o,
+    output logic [3:0]  pc_mux_o,
     output logic [2:0]  exc_pc_mux_o,
     output logic [1:0]  trap_addr_mux_o,
 
-    input  logic        illegal_c_insn_i,
-    input  logic        is_compressed_i,
+
     input  logic        is_fetch_failed_i,
 
-    input  logic [31:0] pc_if_i,
     input  logic [31:0] pc_id_i,
 
     // Stalls
@@ -133,7 +114,6 @@ module cv32e40p_id_stage
     output logic        alu_is_subrot_ex_o,
     output logic [ 1:0] alu_clpx_shift_ex_o,
 
-
     // MUL
     output logic [ 2:0] mult_operator_ex_o,
     output logic [31:0] mult_operand_a_ex_o,
@@ -154,7 +134,6 @@ module cv32e40p_id_stage
 
     // APU
     output logic                        apu_en_ex_o,
-    output logic [WAPUTYPE-1:0]         apu_type_ex_o,
     output logic [APU_WOP_CPU-1:0]      apu_op_ex_o,
     output logic [1:0]                  apu_lat_ex_o,
     output logic [APU_NARGS_CPU-1:0][31:0]                 apu_operands_ex_o,
@@ -176,21 +155,21 @@ module cv32e40p_id_stage
     output logic [1:0]  csr_op_ex_o,
     input  PrivLvl_t    current_priv_lvl_i,
     output logic        csr_irq_sec_o,
-    output logic [6:0]  csr_cause_o,
+    output logic [5:0]  csr_cause_o,
     output logic        csr_save_if_o,
     output logic        csr_save_id_o,
     output logic        csr_save_ex_o,
     output logic        csr_restore_mret_id_o,
     output logic        csr_restore_uret_id_o,
-
     output logic        csr_restore_dret_id_o,
-
     output logic        csr_save_cause_o,
 
     // hwloop signals
     output logic [N_HWLP-1:0] [31:0] hwlp_start_o,
     output logic [N_HWLP-1:0] [31:0] hwlp_end_o,
     output logic [N_HWLP-1:0] [31:0] hwlp_cnt_o,
+    output logic                     hwlp_jump_o,
+    output logic [31:0]              hwlp_target_o,
 
     // hwloop signals from CS register
     input  logic   [N_HWLP_BITS-1:0] csr_hwlp_regid_i,
@@ -215,14 +194,15 @@ module cv32e40p_id_stage
     output logic [5:0]  atop_ex_o,
 
     // Interrupt signals
-    input  logic        irq_pending_i,
+    input  logic [31:0] irq_i,
     input  logic        irq_sec_i,
-    input  logic [5:0]  irq_id_i,
+    input  logic [31:0] mie_bypass_i,           // MIE CSR (bypass)
+    output logic [31:0] mip_o,                  // MIP CSR
     input  logic        m_irq_enable_i,
     input  logic        u_irq_enable_i,
     output logic        irq_ack_o,
-    output logic [5:0]  irq_id_o,
-    output logic [5:0]  exc_cause_o,
+    output logic [4:0]  irq_id_o,
+    output logic [4:0]  exc_cause_o,
 
     // Debug Signal
     output logic        debug_mode_o,
@@ -233,6 +213,10 @@ module cv32e40p_id_stage
     input  logic        debug_ebreakm_i,
     input  logic        debug_ebreaku_i,
     input  logic        trigger_match_i,
+    output logic        debug_p_elw_no_sleep_o,
+
+    // Wakeup Signal
+    output logic        wake_from_sleep_o,
 
     // Forward Signals
     input  logic [5:0]  regfile_waddr_wb_i,
@@ -247,26 +231,50 @@ module cv32e40p_id_stage
     input  logic        mult_multicycle_i,    // when we need multiple cycles in the multiplier and use op c as storage
 
     // Performance Counters
-    output logic        perf_jump_o,          // we are executing a jump instruction
-    output logic        perf_jr_stall_o,      // jump-register-hazard
-    output logic        perf_ld_stall_o,      // load-use-hazard
-    output logic        perf_pipeline_stall_o //extra cycles from elw
+    output logic        mhpmevent_minstret_o,
+    output logic        mhpmevent_load_o,
+    output logic        mhpmevent_store_o,
+    output logic        mhpmevent_jump_o,
+    output logic        mhpmevent_branch_o,
+    output logic        mhpmevent_branch_taken_o,
+    output logic        mhpmevent_compressed_o,
+    output logic        mhpmevent_jr_stall_o,
+    output logic        mhpmevent_imiss_o,
+    output logic        mhpmevent_ld_stall_o,
+    output logic        mhpmevent_pipe_stall_o,
+
+    input  logic        perf_imiss_i,
+    input  logic [31:0] mcounteren_i
 );
 
+  // Source/Destination register instruction index
+  localparam REG_S1_MSB = 19;
+  localparam REG_S1_LSB = 15;
+
+  localparam REG_S2_MSB = 24;
+  localparam REG_S2_LSB = 20;
+
+  localparam REG_S4_MSB = 31;
+  localparam REG_S4_LSB = 27;
+
+  localparam REG_D_MSB  = 11;
+  localparam REG_D_LSB  = 7;
+
   logic [31:0] instr;
+
 
   // Decoder/Controller ID stage internal signals
   logic        deassert_we;
 
   logic        illegal_insn_dec;
-  logic        ebrk_insn;
+  logic        ebrk_insn_dec;
   logic        mret_insn_dec;
   logic        uret_insn_dec;
 
   logic        dret_insn_dec;
 
   logic        ecall_insn_dec;
-  logic        pipe_flush_dec;
+  logic        wfi_insn_dec;
 
   logic        fencei_insn_dec;
 
@@ -275,17 +283,18 @@ module cv32e40p_id_stage
   logic        regc_used_dec;
 
   logic        branch_taken_ex;
-  logic [1:0]  jump_in_id;
-  logic [1:0]  jump_in_dec;
+  logic [1:0]  ctrl_transfer_insn_in_id;
+  logic [1:0]  ctrl_transfer_insn_in_dec;
 
   logic        misaligned_stall;
   logic        jr_stall;
   logic        load_stall;
   logic        csr_apu_stall;
-  logic        instr_multicycle;
-  logic        hwloop_mask;
+  logic        hwlp_mask;
   logic        halt_id;
+  logic        halt_if;
 
+  logic        debug_wfi_no_sleep;
 
   // Immediate decoding and sign extension
   logic [31:0] imm_i_type;
@@ -310,12 +319,11 @@ module cv32e40p_id_stage
 
   logic [31:0] jump_target;       // calculated jump target (-> EX -> IF)
 
-
-
-  // Signals running between controller and exception controller
-  logic       irq_req_ctrl, irq_sec_ctrl;
-  logic [5:0] irq_id_ctrl;
-  logic       exc_ack, exc_kill;// handshake
+  // Signals running between controller and int_controller
+  logic       irq_req_ctrl;
+  logic       irq_sec_ctrl;
+  logic       irq_wu_ctrl;
+  logic [4:0] irq_id_ctrl;
 
   // Register file interface
   logic [5:0]  regfile_addr_ra_id;
@@ -347,7 +355,7 @@ module cv32e40p_id_stage
 
   logic [0:0]  imm_a_mux_sel;
   logic [3:0]  imm_b_mux_sel;
-  logic [1:0]  jump_target_mux_sel;
+  logic [1:0]  ctrl_transfer_target_mux_sel;
 
   // Multiplier Control
   logic [2:0]  mult_operator;    // multiplication operation selection
@@ -359,13 +367,12 @@ module cv32e40p_id_stage
   logic [1:0]  mult_dot_signed;  // Signed mode dot products (can be mixed types)
 
   // FPU signals
-  logic [C_FPNEW_FMTBITS-1:0]  fpu_src_fmt;
-  logic [C_FPNEW_FMTBITS-1:0]  fpu_dst_fmt;
-  logic [C_FPNEW_IFMTBITS-1:0] fpu_int_fmt;
+  logic [cv32e40p_fpu_pkg::FP_FORMAT_BITS-1:0]  fpu_src_fmt;
+  logic [cv32e40p_fpu_pkg::FP_FORMAT_BITS-1:0]  fpu_dst_fmt;
+  logic [cv32e40p_fpu_pkg::INT_FORMAT_BITS-1:0] fpu_int_fmt;
 
   // APU signals
   logic                        apu_en;
-  logic [WAPUTYPE-1:0]         apu_type;
   logic [APU_WOP_CPU-1:0]      apu_op;
   logic [1:0]                  apu_lat;
   logic [APU_NARGS_CPU-1:0][31:0]                 apu_operands;
@@ -377,7 +384,6 @@ module cv32e40p_id_stage
   logic [1:0][5:0]            apu_write_regs;
   logic [1:0]                 apu_write_regs_valid;
 
-  logic [WAPUTYPE-1:0]        apu_flags_src;
   logic                       apu_stall;
   logic [2:0]                 fp_rnd_mode;
 
@@ -397,16 +403,18 @@ module cv32e40p_id_stage
   logic [5:0]  atop_id;
 
   // hwloop signals
-  logic [N_HWLP_BITS-1:0] hwloop_regid, hwloop_regid_int;
-  logic             [2:0] hwloop_we, hwloop_we_int, hwloop_we_masked;
-  logic                   hwloop_target_mux_sel;
-  logic                   hwloop_start_mux_sel;
-  logic                   hwloop_cnt_mux_sel;
+  logic [N_HWLP_BITS-1:0] hwlp_regid, hwlp_regid_int;
+  logic             [2:0] hwlp_we, hwlp_we_int, hwlp_we_masked;
+  logic                   hwlp_target_mux_sel;
+  logic                   hwlp_start_mux_sel;
+  logic                   hwlp_cnt_mux_sel;
 
-  logic            [31:0] hwloop_target;
-  logic            [31:0] hwloop_start, hwloop_start_int;
-  logic            [31:0] hwloop_end;
-  logic            [31:0] hwloop_cnt, hwloop_cnt_int;
+  logic            [31:0] hwlp_target;
+  logic            [31:0] hwlp_start, hwlp_start_int;
+  logic            [31:0] hwlp_end;
+  logic            [31:0] hwlp_cnt, hwlp_cnt_int;
+  logic [N_HWLP-1:0]      hwlp_dec_cnt;
+  logic                   hwlp_valid;
 
   // CSR control
   logic        csr_access;
@@ -465,7 +473,13 @@ module cv32e40p_id_stage
   logic        uret_dec;
   logic        dret_dec;
 
+  // Performance counters
+  logic        id_valid_q;
+  logic        minstret;
+  logic        perf_pipeline_stall;
+
   assign instr = instr_rdata_i;
+
 
   // immediate extraction and sign extension
   assign imm_i_type  = { {20 {instr[31]}}, instr[31:20] };
@@ -476,7 +490,7 @@ module cv32e40p_id_stage
   assign imm_uj_type = { {12 {instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0 };
 
   // immediate for CSR manipulatin (zero extended)
-  assign imm_z_type  = { 27'b0, instr[`REG_S1] };
+  assign imm_z_type  = { 27'b0, instr[REG_S1_MSB:REG_S1_LSB] };
 
   assign imm_s2_type = { 27'b0, instr[24:20] };
   assign imm_bi_type = { {27{instr[24]}}, instr[24:20] };
@@ -491,7 +505,6 @@ module cv32e40p_id_stage
   // clipping immediate, uses a small barrel shifter to pre-process the
   // immediate and an adder to subtract 1
   // The end result is a mask that has 1's set in the lower part
-  // TODO: check if this can be shared with the bit-manipulation unit
   assign imm_clip_type    = (32'h1 << instr[24:20]) - 1;
 
   //-----------------------------------------------------------------------------
@@ -501,26 +514,25 @@ module cv32e40p_id_stage
   assign fregfile_ena = FPU && !PULP_ZFINX ? 1'b1 : 1'b0;
 
   //---------------------------------------------------------------------------
-  // source register selection regfile_fp_x=1 <=> REG_x is a FP-register
+  // source register selection regfile_fp_x=1 <=> CV32E40P_REG_x is a FP-register
   //---------------------------------------------------------------------------
-  assign regfile_addr_ra_id = {fregfile_ena & regfile_fp_a, instr[`REG_S1]};
-  assign regfile_addr_rb_id = {fregfile_ena & regfile_fp_b, instr[`REG_S2]};
+  assign regfile_addr_ra_id = {fregfile_ena & regfile_fp_a, instr[REG_S1_MSB:REG_S1_LSB]};
+  assign regfile_addr_rb_id = {fregfile_ena & regfile_fp_b, instr[REG_S2_MSB:REG_S2_LSB]};
 
   // register C mux
   always_comb begin
     unique case (regc_mux)
       REGC_ZERO:  regfile_addr_rc_id = '0;
-      REGC_RD:    regfile_addr_rc_id = {fregfile_ena & regfile_fp_c, instr[`REG_D]};
-      REGC_S1:    regfile_addr_rc_id = {fregfile_ena & regfile_fp_c, instr[`REG_S1]};
-      REGC_S4:    regfile_addr_rc_id = {fregfile_ena & regfile_fp_c, instr[`REG_S4]};
-      default:    regfile_addr_rc_id = '0;
+      REGC_RD:    regfile_addr_rc_id = {fregfile_ena & regfile_fp_c, instr[REG_D_MSB:REG_D_LSB]};
+      REGC_S1:    regfile_addr_rc_id = {fregfile_ena & regfile_fp_c, instr[REG_S1_MSB:REG_S1_LSB]};
+      REGC_S4:    regfile_addr_rc_id = {fregfile_ena & regfile_fp_c, instr[REG_S4_MSB:REG_S4_LSB]};
     endcase
   end
 
   //---------------------------------------------------------------------------
   // destination registers regfile_fp_d=1 <=> REG_D is a FP-register
   //---------------------------------------------------------------------------
-  assign regfile_waddr_id = {fregfile_ena & regfile_fp_d, instr[`REG_D]};
+  assign regfile_waddr_id = {fregfile_ena & regfile_fp_d, instr[REG_D_MSB:REG_D_LSB]};
 
   // Second Register Write Address Selection
   // Used for prepost load/store and multiplier
@@ -543,63 +555,10 @@ module cv32e40p_id_stage
   // signal to 0 for instructions that are done
   assign clear_instr_valid_o = id_ready_o | halt_id | branch_taken_ex;
 
-  assign branch_taken_ex     = branch_in_ex_o & branch_decision_i;
+  assign branch_taken_ex = branch_in_ex_o && branch_decision_i;
 
 
   assign mult_en = mult_int_en | mult_dot_en;
-
-  ///////////////////////////////////////////////
-  //  _   ___        ___     ___   ___  ____   //
-  // | | | \ \      / / |   / _ \ / _ \|  _ \  //
-  // | |_| |\ \ /\ / /| |  | | | | | | | |_) | //
-  // |  _  | \ V  V / | |__| |_| | |_| |  __/  //
-  // |_| |_|  \_/\_/  |_____\___/ \___/|_|     //
-  //                                           //
-  ///////////////////////////////////////////////
-
-  // hwloop register id
-  assign hwloop_regid_int = instr[7];   // rd contains hwloop register id
-
-  // hwloop target mux
-  always_comb begin
-    case (hwloop_target_mux_sel)
-      1'b0: hwloop_target = pc_id_i + {imm_iz_type[30:0], 1'b0};
-      1'b1: hwloop_target = pc_id_i + {imm_z_type[30:0], 1'b0};
-    endcase
-  end
-
-  // hwloop start mux
-  always_comb begin
-    case (hwloop_start_mux_sel)
-      1'b0: hwloop_start_int = hwloop_target;   // for PC + I imm
-      1'b1: hwloop_start_int = pc_if_i;         // for next PC
-    endcase
-  end
-
-
-  // hwloop cnt mux
-  always_comb begin : hwloop_cnt_mux
-    case (hwloop_cnt_mux_sel)
-      1'b0: hwloop_cnt_int = imm_iz_type;
-      1'b1: hwloop_cnt_int = operand_a_fw_id;
-    endcase;
-  end
-
-  /*
-    when hwloop_mask is 1, the controller is about to take an interrupt
-    the xEPC is going to have the hwloop instruction PC, therefore, do not update the
-    hwloop registers to make clear that the instruction hasn't been executed.
-    Although it may not be a HW bugs causing uninteded behaviours,
-    it helps verifications processes when checking the hwloop regs
-  */
-  assign hwloop_we_masked = hwloop_we_int & ~{3{hwloop_mask}} & {3{id_ready_o}};
-
-  // multiplex between access from instructions and access via CSR registers
-  assign hwloop_start = hwloop_we_masked[0] ? hwloop_start_int : csr_hwlp_data_i;
-  assign hwloop_end   = hwloop_we_masked[1] ? hwloop_target    : csr_hwlp_data_i;
-  assign hwloop_cnt   = hwloop_we_masked[2] ? hwloop_cnt_int   : csr_hwlp_data_i;
-  assign hwloop_regid = (|hwloop_we_masked) ? hwloop_regid_int : csr_hwlp_regid_i;
-  assign hwloop_we    = (|hwloop_we_masked) ? hwloop_we_masked  : csr_hwlp_we_i;
 
 
   //////////////////////////////////////////////////////////////////
@@ -612,7 +571,7 @@ module cv32e40p_id_stage
   //////////////////////////////////////////////////////////////////
 
   always_comb begin : jump_target_mux
-    unique case (jump_target_mux_sel)
+    unique case (ctrl_transfer_target_mux_sel)
       JT_JAL:  jump_target = pc_id_i + imm_uj_type;
       JT_COND: jump_target = pc_id_i + imm_sb_type;
 
@@ -650,7 +609,6 @@ module cv32e40p_id_stage
     unique case (imm_a_mux_sel)
       IMMA_Z:      imm_a = imm_z_type;
       IMMA_ZERO:   imm_a = '0;
-      default:     imm_a = '0;
     endcase
   end
 
@@ -674,14 +632,12 @@ module cv32e40p_id_stage
   //////////////////////////////////////////////////////
 
   // Immediate Mux for operand B
-  // TODO: check if sign-extension stuff works well here, maybe able to save
-  // some area here
   always_comb begin : immediate_b_mux
     unique case (imm_b_mux_sel)
       IMMB_I:      imm_b = imm_i_type;
       IMMB_S:      imm_b = imm_s_type;
       IMMB_U:      imm_b = imm_u_type;
-      IMMB_PCINCR: imm_b = (is_compressed_i && (~data_misaligned_i)) ? 32'h2 : 32'h4;
+      IMMB_PCINCR: imm_b = is_compressed_i ? 32'h2 : 32'h4;
       IMMB_S2:     imm_b = imm_s2_type;
       IMMB_BI:     imm_b = imm_bi_type;
       IMMB_S3:     imm_b = imm_s3_type;
@@ -789,7 +745,6 @@ module cv32e40p_id_stage
     unique case (bmask_a_mux)
       BMASK_A_ZERO: bmask_a_id_imm = '0;
       BMASK_A_S3:   bmask_a_id_imm = imm_s3_type[4:0];
-      default:      bmask_a_id_imm = '0;
     endcase
   end
   always_comb begin
@@ -798,7 +753,6 @@ module cv32e40p_id_stage
       BMASK_B_ONE:  bmask_b_id_imm = 5'd1;
       BMASK_B_S2:   bmask_b_id_imm = imm_s2_type[4:0];
       BMASK_B_S3:   bmask_b_id_imm = imm_s3_type[4:0];
-      default:      bmask_b_id_imm = '0;
     endcase
   end
 
@@ -806,14 +760,12 @@ module cv32e40p_id_stage
     unique case (alu_bmask_a_mux_sel)
       BMASK_A_IMM: bmask_a_id = bmask_a_id_imm;
       BMASK_A_REG: bmask_a_id = operand_b_fw_id[9:5];
-      default:     bmask_a_id = bmask_a_id_imm;
     endcase
   end
   always_comb begin
     unique case (alu_bmask_b_mux_sel)
       BMASK_B_IMM: bmask_b_id = bmask_b_id_imm;
       BMASK_B_REG: bmask_b_id = operand_b_fw_id[4:0];
-      default:     bmask_b_id = bmask_b_id_imm;
     endcase
   end
 
@@ -824,7 +776,6 @@ module cv32e40p_id_stage
     unique case (mult_imm_mux)
       MIMM_ZERO: mult_imm_id = '0;
       MIMM_S3:   mult_imm_id = imm_s3_type[4:0];
-      default:   mult_imm_id = '0;
     endcase
   end
 
@@ -846,26 +797,7 @@ module cv32e40p_id_stage
       assign apu_waddr = regfile_alu_waddr_id;
 
       // flags
-      always_comb begin
-        unique case (apu_flags_src)
-          APU_FLAGS_INT_MULT:
-            apu_flags = {7'h0 , mult_imm_id, mult_signed_mode, mult_sel_subword};
-          APU_FLAGS_DSP_MULT:
-            apu_flags = {13'h0, mult_dot_signed};
-          APU_FLAGS_FP:
-            if (FPU == 1)
-              apu_flags = fp_rnd_mode;
-            else
-              apu_flags = '0;
-          APU_FLAGS_FPNEW:
-            if (FPU == 1)
-              apu_flags = {fpu_int_fmt, fpu_src_fmt, fpu_dst_fmt, fp_rnd_mode};
-            else
-              apu_flags = '0;
-          default:
-            apu_flags = '0;
-        endcase
-       end
+      assign apu_flags = (FPU == 1) ? {fpu_int_fmt, fpu_src_fmt, fpu_dst_fmt, fp_rnd_mode} : '0;
 
       // dependency checks
       always_comb begin
@@ -956,16 +888,6 @@ module cv32e40p_id_stage
   // stall when we access the CSR after a multicycle APU instruction
   assign csr_apu_stall       = (csr_access & (apu_en_ex_o & (apu_lat_ex_o[1] == 1'b1) | apu_busy_i));
 
-`ifndef SYNTHESIS
-  always_comb begin
-    if (FPU==1 && SHARED_FP!=1) begin
-      assert (APU_NDSFLAGS_CPU >= C_RM+2*C_FPNEW_FMTBITS+C_FPNEW_IFMTBITS)
-        else $error("[apu] APU_NDSFLAGS_CPU APU flagbits is smaller than %0d", C_RM+2*C_FPNEW_FMTBITS+C_FPNEW_IFMTBITS);
-    end
-  end
-`endif
-
-
   /////////////////////////////////////////////////////////
   //  ____  _____ ____ ___ ____ _____ _____ ____  ____   //
   // |  _ \| ____/ ___|_ _/ ___|_   _| ____|  _ \/ ___|  //
@@ -975,13 +897,14 @@ module cv32e40p_id_stage
   //                                                     //
   /////////////////////////////////////////////////////////
 
-  cv32e40p_register_file_test_wrap
+  cv32e40p_register_file
   #(
-    .ADDR_WIDTH(6),
-    .FPU(FPU),
-    .PULP_ZFINX(PULP_ZFINX)
+    .ADDR_WIDTH         ( 6                  ),
+    .DATA_WIDTH         ( 32                 ),
+    .FPU                ( FPU                ),
+    .PULP_ZFINX         ( PULP_ZFINX         )
   )
-  registers_i
+  register_file_i
   (
     .clk                ( clk                ),
     .rst_n              ( rst_n              ),
@@ -1008,20 +931,8 @@ module cv32e40p_id_stage
     // Write port b
     .waddr_b_i          ( regfile_alu_waddr_fw_i ),
     .wdata_b_i          ( regfile_alu_wdata_fw_i ),
-    .we_b_i             ( regfile_alu_we_fw_i ),
-
-     // BIST ENABLE
-     .BIST        ( 1'b0                ), // PLEASE CONNECT ME;
-
-     // BIST ports
-     .CSN_T       ( 1'b0                ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
-     .WEN_T       ( 1'b0                ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
-     .A_T         ( 6'b0                ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
-     .D_T         (32'b0                ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
-     .Q_T         (                     )
+    .we_b_i             ( regfile_alu_we_fw_i )
   );
-
-
 
 
   ///////////////////////////////////////////////
@@ -1035,18 +946,12 @@ module cv32e40p_id_stage
 
   cv32e40p_decoder
     #(
-      .PULP_HWLP           ( PULP_HWLP            ),
+      .PULP_XPULP          ( PULP_XPULP           ),
+      .PULP_CLUSTER        ( PULP_CLUSTER         ),
       .A_EXTENSION         ( A_EXTENSION          ),
       .FPU                 ( FPU                  ),
-      .FP_DIVSQRT          ( FP_DIVSQRT           ),
       .PULP_SECURE         ( PULP_SECURE          ),
       .USE_PMP             ( USE_PMP              ),
-      .SHARED_FP           ( SHARED_FP            ),
-      .SHARED_DSP_MULT     ( SHARED_DSP_MULT      ),
-      .SHARED_INT_MULT     ( SHARED_INT_MULT      ),
-      .SHARED_INT_DIV      ( SHARED_INT_DIV       ),
-      .SHARED_FP_DIVSQRT   ( SHARED_FP_DIVSQRT    ),
-      .WAPUTYPE            ( WAPUTYPE             ),
       .APU_WOP_CPU         ( APU_WOP_CPU          ),
       .DEBUG_TRIGGER_EN    ( DEBUG_TRIGGER_EN     )
       )
@@ -1054,12 +959,9 @@ module cv32e40p_id_stage
   (
     // controller related signals
     .deassert_we_i                   ( deassert_we               ),
-    .data_misaligned_i               ( data_misaligned_i         ),
-    .mult_multicycle_i               ( mult_multicycle_i         ),
-    .instr_multicycle_o              ( instr_multicycle          ),
 
     .illegal_insn_o                  ( illegal_insn_dec          ),
-    .ebrk_insn_o                     ( ebrk_insn                 ),
+    .ebrk_insn_o                     ( ebrk_insn_dec             ),
 
     .mret_insn_o                     ( mret_insn_dec             ),
     .uret_insn_o                     ( uret_insn_dec             ),
@@ -1070,7 +972,7 @@ module cv32e40p_id_stage
     .dret_dec_o                      ( dret_dec                  ),
 
     .ecall_insn_o                    ( ecall_insn_dec            ),
-    .pipe_flush_o                    ( pipe_flush_dec            ),
+    .wfi_o                           ( wfi_insn_dec              ),
 
     .fencei_insn_o                   ( fencei_insn_dec           ),
 
@@ -1122,10 +1024,8 @@ module cv32e40p_id_stage
     .fpu_dst_fmt_o                   ( fpu_dst_fmt               ),
     .fpu_int_fmt_o                   ( fpu_int_fmt               ),
     .apu_en_o                        ( apu_en                    ),
-    .apu_type_o                      ( apu_type                  ),
     .apu_op_o                        ( apu_op                    ),
     .apu_lat_o                       ( apu_lat                   ),
-    .apu_flags_src_o                 ( apu_flags_src             ),
     .fp_rnd_mode_o                   ( fp_rnd_mode               ),
 
     // Register file control signals
@@ -1153,18 +1053,22 @@ module cv32e40p_id_stage
     .atop_o                          ( atop_id                   ),
 
     // hwloop signals
-    .hwloop_we_o                     ( hwloop_we_int             ),
-    .hwloop_target_mux_sel_o         ( hwloop_target_mux_sel     ),
-    .hwloop_start_mux_sel_o          ( hwloop_start_mux_sel      ),
-    .hwloop_cnt_mux_sel_o            ( hwloop_cnt_mux_sel        ),
+    .hwlp_we_o                       ( hwlp_we_int               ),
+    .hwlp_target_mux_sel_o           ( hwlp_target_mux_sel       ),
+    .hwlp_start_mux_sel_o            ( hwlp_start_mux_sel        ),
+    .hwlp_cnt_mux_sel_o              ( hwlp_cnt_mux_sel          ),
 
     // debug mode
     .debug_mode_i                    ( debug_mode_o              ),
+    .debug_wfi_no_sleep_i            ( debug_wfi_no_sleep        ),
 
     // jump/branches
-    .jump_in_dec_o                   ( jump_in_dec               ),
-    .jump_in_id_o                    ( jump_in_id                ),
-    .jump_target_mux_sel_o           ( jump_target_mux_sel       )
+    .ctrl_transfer_insn_in_dec_o     ( ctrl_transfer_insn_in_dec    ),
+    .ctrl_transfer_insn_in_id_o      ( ctrl_transfer_insn_in_id     ),
+    .ctrl_transfer_target_mux_sel_o  ( ctrl_transfer_target_mux_sel ),
+
+    // HPM related control signals
+    .mcounteren_i                    ( mcounteren_i              )
 
   );
 
@@ -1179,16 +1083,17 @@ module cv32e40p_id_stage
 
   cv32e40p_controller
   #(
-    .FPU ( FPU )
+    .PULP_CLUSTER ( PULP_CLUSTER ),
+    .PULP_XPULP   ( PULP_XPULP   )
   )
   controller_i
   (
-    .clk                            ( clk                    ),
+    .clk                            ( clk                    ),         // Gated clock
+    .clk_ungated_i                  ( clk_ungated_i          ),         // Ungated clock
     .rst_n                          ( rst_n                  ),
 
     .fetch_enable_i                 ( fetch_enable_i         ),
     .ctrl_busy_o                    ( ctrl_busy_o            ),
-    .first_fetch_o                  ( core_ctrl_firstfetch_o ),
     .is_decoding_o                  ( is_decoding_o          ),
     .is_fetch_failed_i              ( is_fetch_failed_i      ),
 
@@ -1207,13 +1112,12 @@ module cv32e40p_id_stage
     .dret_dec_i                     ( dret_dec               ),
 
 
-    .pipe_flush_i                   ( pipe_flush_dec         ),
-    .ebrk_insn_i                    ( ebrk_insn              ),
+    .wfi_i                          ( wfi_insn_dec           ),
+    .ebrk_insn_i                    ( ebrk_insn_dec          ),
     .fencei_insn_i                  ( fencei_insn_dec        ),
     .csr_status_i                   ( csr_status             ),
-    .instr_multicycle_i             ( instr_multicycle       ),
 
-    .hwloop_mask_o                  ( hwloop_mask            ),
+    .hwlp_mask_o                    ( hwlp_mask              ),
 
     // from IF/ID pipeline
     .instr_valid_i                  ( instr_valid_i          ),
@@ -1227,6 +1131,18 @@ module cv32e40p_id_stage
     .exc_pc_mux_o                   ( exc_pc_mux_o           ),
     .exc_cause_o                    ( exc_cause_o            ),
     .trap_addr_mux_o                ( trap_addr_mux_o        ),
+
+     // HWLoop signls
+    .pc_id_i                        ( pc_id_i                ),
+    .is_compressed_i                ( is_compressed_i        ),
+
+    .hwlp_start_addr_i              ( hwlp_start_o           ),
+    .hwlp_end_addr_i                ( hwlp_end_o             ),
+    .hwlp_counter_i                 ( hwlp_cnt_o             ),
+    .hwlp_dec_cnt_o                 ( hwlp_dec_cnt           ),
+
+    .hwlp_jump_o                    ( hwlp_jump_o            ),
+    .hwlp_targ_addr_o               ( hwlp_target_o          ),
 
     // LSU
     .data_req_ex_i                  ( data_req_ex_o          ),
@@ -1248,23 +1164,17 @@ module cv32e40p_id_stage
 
     // jump/branch control
     .branch_taken_ex_i              ( branch_taken_ex        ),
-    .jump_in_id_i                   ( jump_in_id             ),
-    .jump_in_dec_i                  ( jump_in_dec            ),
+    .ctrl_transfer_insn_in_id_i     ( ctrl_transfer_insn_in_id  ),
+    .ctrl_transfer_insn_in_dec_i    ( ctrl_transfer_insn_in_dec ),
 
-    // Interrupt Controller Signals
-    .irq_pending_i                  ( irq_pending_i          ),
+    // Interrupt signals
+    .irq_wu_ctrl_i                  ( irq_wu_ctrl            ),
     .irq_req_ctrl_i                 ( irq_req_ctrl           ),
     .irq_sec_ctrl_i                 ( irq_sec_ctrl           ),
     .irq_id_ctrl_i                  ( irq_id_ctrl            ),
-    .m_IE_i                         ( m_irq_enable_i         ),
-    .u_IE_i                         ( u_irq_enable_i         ),
     .current_priv_lvl_i             ( current_priv_lvl_i     ),
-
     .irq_ack_o                      ( irq_ack_o              ),
     .irq_id_o                       ( irq_id_o               ),
-
-    .exc_ack_o                      ( exc_ack                ),
-    .exc_kill_o                     ( exc_kill               ),
 
     // Debug Signal
     .debug_mode_o                   ( debug_mode_o           ),
@@ -1275,6 +1185,11 @@ module cv32e40p_id_stage
     .debug_ebreakm_i                ( debug_ebreakm_i        ),
     .debug_ebreaku_i                ( debug_ebreaku_i        ),
     .trigger_match_i                ( trigger_match_i        ),
+    .debug_p_elw_no_sleep_o         ( debug_p_elw_no_sleep_o ),
+    .debug_wfi_no_sleep_o           ( debug_wfi_no_sleep     ),
+
+    // Wakeup Signal
+    .wake_from_sleep_o              ( wake_from_sleep_o      ),
 
     // CSR Controller Signals
     .csr_save_cause_o               ( csr_save_cause_o       ),
@@ -1318,7 +1233,7 @@ module cv32e40p_id_stage
     .operand_c_fw_mux_sel_o         ( operand_c_fw_mux_sel   ),
 
     // Stall signals
-    .halt_if_o                      ( halt_if_o              ),
+    .halt_if_o                      ( halt_if                ),
     .halt_id_o                      ( halt_id                ),
 
     .misaligned_stall_o             ( misaligned_stall       ),
@@ -1326,16 +1241,14 @@ module cv32e40p_id_stage
     .load_stall_o                   ( load_stall             ),
 
     .id_ready_i                     ( id_ready_o             ),
+    .id_valid_i                     ( id_valid_o             ),
 
     .ex_valid_i                     ( ex_valid_i             ),
 
     .wb_ready_i                     ( wb_ready_i             ),
 
     // Performance Counters
-    .perf_jump_o                    ( perf_jump_o            ),
-    .perf_jr_stall_o                ( perf_jr_stall_o        ),
-    .perf_ld_stall_o                ( perf_ld_stall_o        ),
-    .perf_pipeline_stall_o          ( perf_pipeline_stall_o  )
+    .perf_pipeline_stall_o          ( perf_pipeline_stall    )
   );
 
 
@@ -1358,79 +1271,132 @@ module cv32e40p_id_stage
     .clk                  ( clk                ),
     .rst_n                ( rst_n              ),
 
-    // to controller
+    // External interrupt lines
+    .irq_i                ( irq_i              ),
+    .irq_sec_i            ( irq_sec_i          ),
+
+    // To cv32e40p_controller
     .irq_req_ctrl_o       ( irq_req_ctrl       ),
     .irq_sec_ctrl_o       ( irq_sec_ctrl       ),
     .irq_id_ctrl_o        ( irq_id_ctrl        ),
+    .irq_wu_ctrl_o        ( irq_wu_ctrl        ),
 
-    .ctrl_ack_i           ( exc_ack            ),
-    .ctrl_kill_i          ( exc_kill           ),
-
-    // Interrupt signals
-    .irq_pending_i        ( irq_pending_i      ),
-    .irq_sec_i            ( irq_sec_i          ),
-    .irq_id_i             ( irq_id_i           ),
-
-    .m_IE_i               ( m_irq_enable_i     ),
-    .u_IE_i               ( u_irq_enable_i     ),
+    // To/from with cv32e40p_cs_registers
+    .mie_bypass_i         ( mie_bypass_i       ),
+    .mip_o                ( mip_o              ),
+    .m_ie_i               ( m_irq_enable_i     ),
+    .u_ie_i               ( u_irq_enable_i     ),
     .current_priv_lvl_i   ( current_priv_lvl_i )
-
   );
 
-
-  //////////////////////////////////////////////////////////////////////////
-  //          ____ ___  _   _ _____ ____   ___  _     _     _____ ____    //
-  //         / ___/ _ \| \ | |_   _|  _ \ / _ \| |   | |   | ____|  _ \   //
-  // HWLOOP-| |  | | | |  \| | | | | |_) | | | | |   | |   |  _| | |_) |  //
-  //        | |__| |_| | |\  | | | |  _ <| |_| | |___| |___| |___|  _ <   //
-  //         \____\___/|_| \_| |_| |_| \_\\___/|_____|_____|_____|_| \_\  //
-  //                                                                      //
-  //////////////////////////////////////////////////////////////////////////
-
   generate
-  if(PULP_HWLP) begin : HWLOOP_REGS
+  if (PULP_XPULP) begin : HWLOOP_REGS
 
-`ifndef SYNTHESIS
-    $fatal("[ERROR] CV32E40P does not (yet) support PULP_HWLP == 1");
-`endif
+    ///////////////////////////////////////////////
+    //  _   ___        ___     ___   ___  ____   //
+    // | | | \ \      / / |   / _ \ / _ \|  _ \  //
+    // | |_| |\ \ /\ / /| |  | | | | | | | |_) | //
+    // |  _  | \ V  V / | |__| |_| | |_| |  __/  //
+    // |_| |_|  \_/\_/  |_____\___/ \___/|_|     //
+    //                                           //
+    ///////////////////////////////////////////////
 
-    logic hwloop_valid;
 
-    cv32e40p_hwloop_regs
-    #(
-      .N_REGS ( N_HWLP )
-    )
-    hwloop_regs_i
-    (
-      .clk                   ( clk                       ),
-      .rst_n                 ( rst_n                     ),
+      cv32e40p_hwloop_regs
+      #(
+        .N_REGS ( N_HWLP )
+      )
+      hwloop_regs_i
+      (
+        .clk                   ( clk                     ),
+        .rst_n                 ( rst_n                   ),
 
-      // from ID
-      .hwlp_start_data_i     ( hwloop_start              ),
-      .hwlp_end_data_i       ( hwloop_end                ),
-      .hwlp_cnt_data_i       ( hwloop_cnt                ),
-      .hwlp_we_i             ( hwloop_we                 ),
-      .hwlp_regid_i          ( hwloop_regid              ),
+        // from ID
+        .hwlp_start_data_i     ( hwlp_start              ),
+        .hwlp_end_data_i       ( hwlp_end                ),
+        .hwlp_cnt_data_i       ( hwlp_cnt                ),
+        .hwlp_we_i             ( hwlp_we                 ),
+        .hwlp_regid_i          ( hwlp_regid              ),
 
-      // from controller
-      .valid_i               ( hwloop_valid              ),
+        // from controller
+        .valid_i               ( hwlp_valid              ),
 
-      // to hwloop controller
-      .hwlp_start_addr_o     ( hwlp_start_o              ),
-      .hwlp_end_addr_o       ( hwlp_end_o                ),
-      .hwlp_counter_o        ( hwlp_cnt_o                ),
+        // to hwloop controller
+        .hwlp_start_addr_o     ( hwlp_start_o            ),
+        .hwlp_end_addr_o       ( hwlp_end_o              ),
+        .hwlp_counter_o        ( hwlp_cnt_o              ),
 
-      // from hwloop controller
-      .hwlp_dec_cnt_i        ( hwlp_dec_cnt_i            )
-    );
+        // from hwloop controller
+        .hwlp_dec_cnt_i        ( hwlp_dec_cnt            )
+      );
 
-    assign hwloop_valid = instr_valid_i & clear_instr_valid_o & is_hwlp_i;
+      assign hwlp_valid     = instr_valid_i & clear_instr_valid_o;
+
+      // hwloop register id
+      assign hwlp_regid_int = instr[7];   // rd contains hwloop register id
+
+      // hwloop target mux
+      always_comb begin
+        case (hwlp_target_mux_sel)
+          1'b0: hwlp_target = pc_id_i + {imm_iz_type[30:0], 1'b0};
+          1'b1: hwlp_target = pc_id_i + {imm_z_type[30:0], 1'b0};
+        endcase
+      end
+
+      // hwloop start mux
+      always_comb begin
+        case (hwlp_start_mux_sel)
+          1'b0: hwlp_start_int = hwlp_target;   // for PC + I imm
+          1'b1: hwlp_start_int = pc_id_i+4;       // for next PC
+        endcase
+      end
+
+
+      // hwloop cnt mux
+      always_comb begin : hwlp_cnt_mux
+        case (hwlp_cnt_mux_sel)
+          1'b0: hwlp_cnt_int = imm_iz_type;
+          1'b1: hwlp_cnt_int = operand_a_fw_id;
+        endcase;
+      end
+
+      /*
+        when hwlp_mask is 1, the controller is about to take an interrupt
+        the xEPC is going to have the hwloop instruction PC, therefore, do not update the
+        hwloop registers to make clear that the instruction hasn't been executed.
+        Although it may not be a HW bugs causing uninteded behaviours,
+        it helps verifications processes when checking the hwloop regs
+      */
+      assign hwlp_we_masked = hwlp_we_int & ~{3{hwlp_mask}} & {3{id_ready_o}};
+
+      // multiplex between access from instructions and access via CSR registers
+      assign hwlp_start = hwlp_we_masked[0] ? hwlp_start_int : csr_hwlp_data_i;
+      assign hwlp_end   = hwlp_we_masked[1] ? hwlp_target    : csr_hwlp_data_i;
+      assign hwlp_cnt   = hwlp_we_masked[2] ? hwlp_cnt_int   : csr_hwlp_data_i;
+      assign hwlp_regid = (|hwlp_we_masked) ? hwlp_regid_int : csr_hwlp_regid_i;
+      assign hwlp_we    = (|hwlp_we_masked) ? hwlp_we_masked : csr_hwlp_we_i;
+
+
 
   end else begin
-    assign hwlp_start_o = 'b0;
-    assign hwlp_end_o = 'b0;
-    assign hwlp_cnt_o = 'b0;
+
+    assign hwlp_start_o   = 'b0;
+    assign hwlp_end_o     = 'b0;
+    assign hwlp_cnt_o     = 'b0;
+    assign hwlp_valid     = 'b0;
+    assign hwlp_regid_int = 'b0;
+    assign hwlp_target    = 'b0;
+    assign hwlp_start_int = 'b0;
+    assign hwlp_cnt_int   = 'b0;
+    assign hwlp_we_masked = 'b0;
+    assign hwlp_start     = 'b0;
+    assign hwlp_end       = 'b0;
+    assign hwlp_cnt       = 'b0;
+    assign hwlp_regid     = 'b0;
+    assign hwlp_we        = 'b0;
+
   end
+
   endgenerate
 
 
@@ -1478,7 +1444,6 @@ module cv32e40p_id_stage
       mult_clpx_img_ex_o          <= 1'b0;
 
       apu_en_ex_o                 <= '0;
-      apu_type_ex_o               <= '0;
       apu_op_ex_o                 <= '0;
       apu_lat_ex_o                <= '0;
       apu_operands_ex_o[0]        <= '0;
@@ -1523,41 +1488,37 @@ module cv32e40p_id_stage
         // => keep it stalled
         if (prepost_useincr_ex_o == 1'b1)
         begin
-          alu_operand_a_ex_o        <= alu_operand_a;
+          alu_operand_a_ex_o        <= operand_a_fw_id;
         end
 
-        alu_operand_b_ex_o          <= alu_operand_b;
-        regfile_alu_we_ex_o         <= regfile_alu_we_id;
-        prepost_useincr_ex_o        <= prepost_useincr;
+        alu_operand_b_ex_o          <= 32'h4;
+        regfile_alu_we_ex_o         <= 1'b0;
+        prepost_useincr_ex_o        <= 1'b1;
 
         data_misaligned_ex_o        <= 1'b1;
       end
     end else if (mult_multicycle_i) begin
-      mult_operand_c_ex_o <= alu_operand_c;
+      mult_operand_c_ex_o <= operand_c_fw_id;
     end
     else begin
       // normal pipeline unstall case
 
       if (id_valid_o)
       begin // unstall the whole pipeline
-
-        alu_en_ex_o                 <= alu_en | branch_taken_ex;
-        if (alu_en | branch_taken_ex)
+        alu_en_ex_o                 <= alu_en;
+        if (alu_en)
         begin
-          //this prevents divisions or multicycle instructions to keep the EX stage busy
-          alu_operator_ex_o           <= branch_taken_ex ? ALU_SLTU : alu_operator;
-          if(~branch_taken_ex) begin
-            alu_operand_a_ex_o        <= alu_operand_a;
-            alu_operand_b_ex_o        <= alu_operand_b;
-            alu_operand_c_ex_o        <= alu_operand_c;
-            bmask_a_ex_o              <= bmask_a_id;
-            bmask_b_ex_o              <= bmask_b_id;
-            imm_vec_ext_ex_o          <= imm_vec_ext_id;
-            alu_vec_mode_ex_o         <= alu_vec_mode;
-            alu_is_clpx_ex_o          <= is_clpx;
-            alu_clpx_shift_ex_o       <= instr[14:13];
-            alu_is_subrot_ex_o        <= is_subrot;
-          end
+          alu_operator_ex_o         <= alu_operator;
+          alu_operand_a_ex_o        <= alu_operand_a;
+          alu_operand_b_ex_o        <= alu_operand_b;
+          alu_operand_c_ex_o        <= alu_operand_c;
+          bmask_a_ex_o              <= bmask_a_id;
+          bmask_b_ex_o              <= bmask_b_id;
+          imm_vec_ext_ex_o          <= imm_vec_ext_id;
+          alu_vec_mode_ex_o         <= alu_vec_mode;
+          alu_is_clpx_ex_o          <= is_clpx;
+          alu_clpx_shift_ex_o       <= instr[14:13];
+          alu_is_subrot_ex_o        <= is_subrot;
         end
 
         mult_en_ex_o                <= mult_en;
@@ -1584,7 +1545,6 @@ module cv32e40p_id_stage
         // APU pipeline
         apu_en_ex_o                 <= apu_en;
         if (apu_en) begin
-          apu_type_ex_o             <= apu_type;
           apu_op_ex_o               <= apu_op;
           apu_lat_ex_o              <= apu_lat;
           apu_operands_ex_o         <= apu_operands;
@@ -1622,11 +1582,11 @@ module cv32e40p_id_stage
 
         data_misaligned_ex_o        <= 1'b0;
 
-        if ((jump_in_id == BRANCH_COND) || data_req_id) begin
+        if ((ctrl_transfer_insn_in_id == BRANCH_COND) || data_req_id) begin
           pc_ex_o                   <= pc_id_i;
         end
 
-        branch_in_ex_o              <= jump_in_id == BRANCH_COND;
+        branch_in_ex_o              <= ctrl_transfer_insn_in_id == BRANCH_COND;
       end else if(ex_ready_i) begin
         // EX stage is ready but we don't have a new instruction for it,
         // so we set all write enables to 0, but unstall the pipe
@@ -1662,22 +1622,194 @@ module cv32e40p_id_stage
     end
   end
 
+  // Performance Counter Events
+
+  // Illegal/ebreak/ecall are never counted as retired instructions. Note that actually issued instructions
+  // are being counted; the manner in which CSR instructions access the performance counters guarantees
+  // that this count will correspond to the retired isntructions count.
+  assign minstret = id_valid_o && is_decoding_o && !(illegal_insn_dec || ebrk_insn_dec || ecall_insn_dec);
+
+  always_ff @(posedge clk , negedge rst_n)
+  begin
+    if ( rst_n == 1'b0 )
+    begin
+      id_valid_q                 <= 1'b0;
+      mhpmevent_minstret_o       <= 1'b0;
+      mhpmevent_load_o           <= 1'b0;
+      mhpmevent_store_o          <= 1'b0;
+      mhpmevent_jump_o           <= 1'b0;
+      mhpmevent_branch_o         <= 1'b0;
+      mhpmevent_compressed_o     <= 1'b0;
+      mhpmevent_branch_taken_o   <= 1'b0;
+      mhpmevent_jr_stall_o       <= 1'b0;
+      mhpmevent_imiss_o          <= 1'b0;
+      mhpmevent_ld_stall_o       <= 1'b0;
+      mhpmevent_pipe_stall_o     <= 1'b0;
+    end
+    else
+    begin
+      // Helper signal
+      id_valid_q                 <= id_valid_o;
+      // ID stage counts
+      mhpmevent_minstret_o       <= minstret;
+      mhpmevent_load_o           <= minstret && data_req_id && !data_we_id;
+      mhpmevent_store_o          <= minstret && data_req_id && data_we_id;
+      mhpmevent_jump_o           <= minstret && ((ctrl_transfer_insn_in_id == BRANCH_JAL) || (ctrl_transfer_insn_in_id == BRANCH_JALR));
+      mhpmevent_branch_o         <= minstret && (ctrl_transfer_insn_in_id == BRANCH_COND);
+      mhpmevent_compressed_o     <= minstret && is_compressed_i;
+      // EX stage count
+      mhpmevent_branch_taken_o   <= mhpmevent_branch_o && branch_decision_i;
+      // IF stage count
+      mhpmevent_imiss_o          <= perf_imiss_i;
+      // Jump-register-hazard; do not count stall on flushed instructions (id_valid_q used to only count first cycle)
+      mhpmevent_jr_stall_o       <= jr_stall && !halt_id && id_valid_q;
+      // Load-use-hazard; do not count stall on flushed instructions (id_valid_q used to only count first cycle)
+      mhpmevent_ld_stall_o       <= load_stall && !halt_id && id_valid_q;
+      // ELW
+      mhpmevent_pipe_stall_o     <= perf_pipeline_stall;
+    end
+  end
 
   // stall control
   assign id_ready_o = ((~misaligned_stall) & (~jr_stall) & (~load_stall) & (~apu_stall) & (~csr_apu_stall) & ex_ready_i);
   assign id_valid_o = (~halt_id) & id_ready_o;
+  assign halt_if_o  = halt_if;
 
 
   //----------------------------------------------------------------------------
   // Assertions
   //----------------------------------------------------------------------------
-  `ifndef VERILATOR
+  `ifdef CV32E40P_ASSERT_ON
+
+    always_comb begin
+      if (FPU==1) begin
+        assert (APU_NDSFLAGS_CPU >= C_RM+2*cv32e40p_fpu_pkg::FP_FORMAT_BITS+cv32e40p_fpu_pkg::INT_FORMAT_BITS)
+          else $error("[apu] APU_NDSFLAGS_CPU APU flagbits is smaller than %0d", C_RM+2*cv32e40p_fpu_pkg::FP_FORMAT_BITS+cv32e40p_fpu_pkg::INT_FORMAT_BITS);
+      end
+    end
+
     // make sure that branch decision is valid when jumping
-    assert property (
-      @(posedge clk) (branch_in_ex_o) |-> (branch_decision_i !== 1'bx) ) else begin $display("%t, Branch decision is X in module %m", $time); $stop; end
+    a_br_decision : assert property (
+      @(posedge clk) (branch_in_ex_o) |-> (branch_decision_i !== 1'bx) ) else begin $warning("%t, Branch decision is X in module %m", $time); $stop; end
 
     // the instruction delivered to the ID stage should always be valid
-    assert property (
-      @(posedge clk) (instr_valid_i & (~illegal_c_insn_i)) |-> (!$isunknown(instr_rdata_i)) ) else $display("Instruction is valid, but has at least one X");
+    a_valid_instr : assert property (
+      @(posedge clk) (instr_valid_i & (~illegal_c_insn_i)) |-> (!$isunknown(instr)) ) else $warning("%t, Instruction is valid, but has at least one X", $time);
+
+    // Check that instruction after taken branch is flushed (more should actually be flushed, but that is not checked here)
+    // and that EX stage is ready to receive flushed instruction immediately
+    property p_branch_taken_ex;
+       @(posedge clk) disable iff (!rst_n) (branch_taken_ex == 1'b1) |-> ((ex_ready_i == 1'b1) &&
+                                                                          (alu_en == 1'b0) && (apu_en == 1'b0) &&
+                                                                          (mult_en == 1'b0) && (mult_int_en == 1'b0) &&
+                                                                          (mult_dot_en == 1'b0) && (regfile_we_id == 1'b0) &&
+                                                                          (regfile_alu_we_id == 1'b0) && (data_req_id == 1'b0));
+    endproperty
+
+    a_branch_taken_ex : assert property(p_branch_taken_ex);
+
+    // Check that if IRQ PC update does not coincide with IRQ related CSR write
+    // MIE is excluded from the check because it has a bypass.
+    property p_irq_csr;
+       @(posedge clk) disable iff (!rst_n) (pc_set_o && (pc_mux_o == PC_EXCEPTION) && ((exc_pc_mux_o == EXC_PC_EXCEPTION) || (exc_pc_mux_o == EXC_PC_IRQ)) &&
+                                            csr_access_ex_o && (csr_op_ex_o != CSR_OP_READ)) |->
+                                           ((alu_operand_b_ex_o[11:0] != CSR_MSTATUS) && (alu_operand_b_ex_o[11:0] != CSR_USTATUS) &&
+                                            (alu_operand_b_ex_o[11:0] != CSR_MEPC) && (alu_operand_b_ex_o[11:0] != CSR_UEPC) &&
+                                            (alu_operand_b_ex_o[11:0] != CSR_MCAUSE) && (alu_operand_b_ex_o[11:0] != CSR_UCAUSE) &&
+                                            (alu_operand_b_ex_o[11:0] != CSR_MTVEC) && (alu_operand_b_ex_o[11:0] != CSR_UTVEC));
+    endproperty
+
+    a_irq_csr : assert property(p_irq_csr);
+
+    // Check that xret does not coincide with CSR write (to avoid using wrong return address)
+    // This check is more strict than really needed; a CSR instruction would be allowed in EX as long
+    // as its write action happens before the xret CSR usage
+    property p_xret_csr;
+       @(posedge clk) disable iff (!rst_n) (pc_set_o && ((pc_mux_o == PC_MRET) || (pc_mux_o == PC_URET) || (pc_mux_o == PC_DRET))) |->
+                                           (!(csr_access_ex_o && (csr_op_ex_o != CSR_OP_READ)));
+    endproperty
+
+    a_xret_csr : assert property(p_xret_csr);
+
+    generate
+    if (!A_EXTENSION) begin
+
+      // Check that A extension opcodes are decoded as illegal when A extension not enabled
+      property p_illegal_0;
+         @(posedge clk) disable iff (!rst_n) (instr[6:0] == OPCODE_AMO) |-> (illegal_insn_dec == 'b1);
+      endproperty
+
+      a_illegal_0 : assert property(p_illegal_0);
+
+    end
+    endgenerate
+
+    generate
+    if (!PULP_XPULP) begin
+
+      // Check that PULP extension opcodes are decoded as illegal when PULP extension is not enabled
+      property p_illegal_1;
+         @(posedge clk) disable iff (!rst_n) ((instr[6:0] == OPCODE_LOAD_POST) || (instr[6:0] == OPCODE_STORE_POST) || (instr[6:0] == OPCODE_PULP_OP) ||
+                                              (instr[6:0] == OPCODE_HWLOOP) || (instr[6:0] == OPCODE_VECOP)) |-> (illegal_insn_dec == 'b1);
+      endproperty
+
+      a_illegal_1 : assert property(p_illegal_1);
+
+      // Check that certain ALU operations are not used when PULP extension is not enabled
+      property p_alu_op;
+         @(posedge clk) disable iff (!rst_n) (1'b1) |-> ( (alu_operator != ALU_ADDU ) && (alu_operator != ALU_SUBU ) &&
+                                                           (alu_operator != ALU_ADDR ) && (alu_operator != ALU_SUBR ) &&
+                                                           (alu_operator != ALU_ADDUR) && (alu_operator != ALU_SUBUR) &&
+                                                           (alu_operator != ALU_ROR) && (alu_operator != ALU_BEXT) &&
+                                                           (alu_operator != ALU_BEXTU) && (alu_operator != ALU_BINS) &&
+                                                           (alu_operator != ALU_BCLR) && (alu_operator != ALU_BSET) &&
+                                                           (alu_operator != ALU_BREV) && (alu_operator != ALU_FF1) &&
+                                                           (alu_operator != ALU_FL1) && (alu_operator != ALU_CNT) &&
+                                                           (alu_operator != ALU_CLB) && (alu_operator != ALU_EXTS) &&
+                                                           (alu_operator != ALU_EXT) && (alu_operator != ALU_LES) &&
+                                                           (alu_operator != ALU_LEU) && (alu_operator != ALU_GTS) &&
+                                                           (alu_operator != ALU_GTU) && (alu_operator != ALU_SLETS) &&
+                                                           (alu_operator != ALU_SLETU) && (alu_operator != ALU_ABS) &&
+                                                           (alu_operator != ALU_CLIP) && (alu_operator != ALU_CLIPU) &&
+                                                           (alu_operator != ALU_INS) && (alu_operator != ALU_MIN) &&
+                                                           (alu_operator != ALU_MINU) && (alu_operator != ALU_MAX) &&
+                                                           (alu_operator != ALU_MAXU) && (alu_operator != ALU_SHUF) &&
+                                                           (alu_operator != ALU_SHUF2) && (alu_operator != ALU_PCKLO) &&
+                                                           (alu_operator != ALU_PCKHI) );
+      endproperty
+
+      a_alu_op : assert property(p_alu_op);
+
+      // Check that certain vector modes are not used when PULP extension is not enabled
+      property p_vector_mode;
+         @(posedge clk) disable iff (!rst_n) (1'b1) |-> ( (alu_vec_mode != VEC_MODE8 ) && (alu_vec_mode != VEC_MODE16 ) );
+      endproperty
+
+      a_vector_mode : assert property(p_vector_mode);
+
+      // Check that certain multiplier operations are not used when PULP extension is not enabled
+      property p_mul_op;
+         @(posedge clk) disable iff (!rst_n) (mult_int_en == 1'b1) |-> ( (mult_operator != MUL_MSU32) && (mult_operator != MUL_I) &&
+                                                                         (mult_operator != MUL_IR) && (mult_operator != MUL_DOT8) &&
+                                                                         (mult_operator != MUL_DOT16) );
+      endproperty
+
+      a_mul_op : assert property(p_mul_op);
+
+    end
+    endgenerate
+
+   // Check that illegal instruction has no other side effects
+    property p_illegal_2;
+       @(posedge clk) disable iff (!rst_n) (illegal_insn_dec == 1'b1) |-> !(ebrk_insn_dec || mret_insn_dec || uret_insn_dec || dret_insn_dec ||
+                                                                            ecall_insn_dec || wfi_insn_dec || fencei_insn_dec ||
+                                                                            alu_en || mult_int_en || mult_dot_en || apu_en ||
+                                                                            regfile_we_id || regfile_alu_we_id ||
+                                                                            csr_op != CSR_OP_READ || data_req_id);
+    endproperty
+
+    a_illegal_2 : assert property(p_illegal_2);
+
   `endif
-endmodule
+
+endmodule // cv32e40p_id_stage
