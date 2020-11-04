@@ -39,7 +39,14 @@ end constraint;
 
 constraint c_no_debug :=
 	if (!m_rst)
-		debug_req_i == 0;
+		!debug_req_i
+		&& !c/debug_single_step
+		&& !c/debug_ebreakm
+		&& !c/debug_ebreaku
+		&& !c/trigger_match
+		&& !c/debug_p_elw_no_sleep
+		&& !c/debug_mode
+		&& !c/debug_csr_save
 	endif;
 end constraint;
 
@@ -107,7 +114,7 @@ end constraint;
 
 constraint c_fetch_enable_fairness :=
 	if (!m_rst)
-		exists i in 0..1: next(fetch_enable_i,i) end exists
+		exists i in 0..0: next(fetch_enable_i,i) end exists
 	endif;
 end constraint;
 
@@ -116,6 +123,40 @@ constraint c_no_wfi :=
 		!c/id_stage_i/decoder_i/wfi_o;
 	endif;
 end constraint;
+
+constraint c_testing :=
+	if (!m_rst)
+		true
+		//&& c/ex_stage_i/ex_ready_o
+		//&& c/id_stage_i/controller_i/instr_req_o
+/*		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != RESET)
+		//&& (c/id_stage_i/controller_i/ctrl_fsm_cs != BOOT_SET)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != SLEEP)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != WAIT_SLEEP)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != FIRST_FETCH)
+		//&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DECODE)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != IRQ_FLUSH_ELW)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != ELW_EXE)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != FLUSH_EX)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != FLUSH_WB)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != XRET_JUMP)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_TAKEN_ID)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_TAKEN_IF)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_FLUSH)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_WAIT_BRANCH)
+		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DECODE_HWLOOP)*/
+		//&& ((c/id_stage_i/controller_i/ctrl_fsm_cs == BOOT_SET) || (c/id_stage_i/controller_i/ctrl_fsm_cs == DECODE))
+		//&& !c/id_stage_i/controller_i/debug_req_pending
+	endif;
+end constraint;
+
+constraint c_scan_cg_en :=
+	if (!m_rst)
+		scan_cg_en_i;
+	endif;
+end constraint;
+
+
 /*
 constraint c_no_st_flush :=
 	if (!m_rst)
@@ -395,6 +436,30 @@ prove:
 end property;
 
 
+property step_simple;
+dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi, c_scan_cg_en;
+for timepoints:
+	// t1 detection
+	t1_IF_rx_n = t,
+
+	// t2 detection
+	t2_IF_rx_n = t + 0..v_examination_window waits_for complete mg_t2_IF_rx,
+
+	t_dummy = t; // last dummy line (for the semicolon)
+assume:
+	// Property is triggered whenever a token enters first pipeline stage
+	at t1_IF_rx_n: mg_t1_IF_rx;
+
+	// Connect token counters
+	at t: IF_tcnt == 0;
+	during[t,t+v_examination_window]: IF_tcnt_inc == m_IF_rx;
+
+	during[t,t+v_examination_window]: c_testing;
+prove:
+	at t2_IF_rx_n: mg_t2_IF_rx;
+end property;
+
+
 property base;
 dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable;
 for timepoints:
@@ -522,7 +587,7 @@ end property;
 
 
 property step;
-dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi;
+dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi, c_testing, c_scan_cg_en;
 for timepoints:
 
 	// This code detects last use of the stage that can come from either t1 or some older token if t1 contains skipped stages
@@ -776,7 +841,7 @@ prove:
 	at t2_ME_tx_f: m_ME_pc == at_t2_EX_tx_pc;
 	at t2_WB_tx_f: m_WB_pc == at_t2_ME_tx_pc;
 */
-	// Prove right hook
+/*	// Prove right hook
 	at t2_IF_tx_f: mg_t2_IF_tx;
 	at t2_ID_rx_f: mg_t2_ID_rx;
 	at t2_ID_tx_f: mg_t2_ID_tx;
@@ -786,5 +851,5 @@ prove:
 	at t2_ME_tx_f: mg_t2_ME_tx;
 	at t2_WB_rx_f: mg_t2_WB_rx;
 	at t2_WB_tx_f: mg_t2_WB_tx;
-
+*/
 end property;
