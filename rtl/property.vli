@@ -3,7 +3,7 @@ macro logic m_rst := !c/rst_ni end macro;
 macro logic m_clk := !c/clk_i end macro;
 
 macro logic m_IF_rx := next(c/if_stage_i/instr_valid_id_o) end macro;
-macro logic m_ID_rx := (true) end macro;
+macro logic m_ID_rx := c/id_stage_i/instr_valid_i end macro;
 macro logic m_EX_rx := (true) end macro;
 macro logic m_ME_rx := (true) end macro;
 macro logic m_WB_rx := (true) end macro;
@@ -19,19 +19,6 @@ macro logic m_ID_flush := 0 end macro;
 macro logic m_EX_flush := 0 end macro;
 macro logic m_ME_flush := 0 end macro;
 macro logic m_WB_flush := 0 end macro;
-/*
-macro unsigned m_IF_instr := c/if_unit/if_instr end macro;
-macro unsigned m_ID_instr := c/id_unit/id_instr end macro;
-macro unsigned m_EX_instr := c/ex_units/ex_instr end macro;
-macro unsigned m_ME_instr := c/mem_unit/mem_instr end macro;
-macro unsigned m_WB_instr := c/wb_unit/wb_instr_o end macro;
-
-macro unsigned m_IF_pc := c/if_unit/if_pc end macro;
-macro unsigned m_ID_pc := c/id_unit/id_pc end macro;
-macro unsigned m_EX_pc := c/ex_units/ex_pc end macro;
-macro unsigned m_ME_pc := c/mem_unit/mem_pc end macro;
-macro unsigned m_WB_pc := c/wb_unit/wb_pc_o end macro;
-*/
 
 constraint c_no_reset :=
 	!m_rst;
@@ -129,136 +116,17 @@ constraint c_testing :=
 		true
 		//&& c/ex_stage_i/ex_ready_o
 		//&& c/id_stage_i/controller_i/instr_req_o
-/*		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != RESET)
-		//&& (c/id_stage_i/controller_i/ctrl_fsm_cs != BOOT_SET)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != SLEEP)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != WAIT_SLEEP)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != FIRST_FETCH)
-		//&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DECODE)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != IRQ_FLUSH_ELW)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != ELW_EXE)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != FLUSH_EX)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != FLUSH_WB)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != XRET_JUMP)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_TAKEN_ID)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_TAKEN_IF)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_FLUSH)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DBG_WAIT_BRANCH)
-		&& (c/id_stage_i/controller_i/ctrl_fsm_cs != DECODE_HWLOOP)*/
+		//&& (c/id_stage_i/controller_i/ctrl_fsm_cs != RESET)
 		//&& ((c/id_stage_i/controller_i/ctrl_fsm_cs == BOOT_SET) || (c/id_stage_i/controller_i/ctrl_fsm_cs == DECODE))
 		//&& !c/id_stage_i/controller_i/debug_req_pending
 	endif;
 end constraint;
 
-constraint c_scan_cg_en :=
-	if (!m_rst)
-		scan_cg_en_i;
-	endif;
-end constraint;
-
 
 /*
-constraint c_no_st_flush :=
-	if (!m_rst)
-		((c/st_flush == 0) || prev(m_rst));
-	endif;
-end constraint;
-
-constraint c_no_bu_flush :=
-	if (!m_rst)
-		((c/bu_flush == 0) || prev(m_rst));
-	endif;
-end constraint;
-
-constraint c_no_if_stall_nxt_pc :=
-	if (!m_rst)
-		c/if_stall_nxt_pc == 0;
-	endif;
-end constraint;
-
-constraint c_if_stall_nxt_pc_fairness :=
-	if (!m_rst)
-		exists i in 0..3:
-			next(c/if_stall_nxt_pc,i) == 0;
-		end exists;
-	endif;
-end constraint;
-
 constraint c_if_nop :=
 	if (!m_rst)
 		c/if_instr == 32'h00000013;
-	endif;
-end constraint;
-
-constraint c_id_nop :=
-	if (!m_rst)
-		c/id_instr == 32'h00000013;
-	endif;
-end constraint;
-
-constraint c_ex_nop :=
-	if (!m_rst)
-		c/ex_instr == 32'h00000013;
-	endif;
-end constraint;
-
-constraint c_no_ex_bubble :=
-	if (!m_rst)
-		c/ex_bubble == 0;
-	endif;
-end constraint;
-
-constraint c_dmem_ready :=
-	if (!m_rst)
-		dmem_ack == 1;
-	endif;
-end constraint;
-
-constraint c_dmem_fairness :=
-	if (!m_rst)
-		exists i in 0..3:
-			next(dmem_ack,i) == 1;
-		end exists;
-	endif;
-end constraint;
-
-constraint c_if_parcel_valid :=
-	if (!m_rst)
-		((c/if_unit/pd_bubble == 0) || prev(m_rst) || prev(m_rst, 2));
-	endif;
-end constraint;
-
-constraint c_if_parcel_valid2 :=
-	if (!m_rst)
-		(c/if_unit/if_parcel_misaligned == 0) &&
-		(c/if_unit/if_parcel_page_fault == 0);
-	endif;
-end constraint;
-
-constraint c_if_parcel_valid_fairness :=
-	if (!m_rst)
-		exists i in 0..4:
-			next(c/if_unit/pd_bubble,i) == 0;
-		end exists;
-	endif;
-end constraint;
-
-constraint c_no_exception :=
-	if (!m_rst)
-		c/if_exception == 0 &&
-		c/ex_exception == 0 &&
-		c/mem_exception == 0 &&
-		c/wb_exception == 0 &&
-		c/id_exception == 0;
-	endif;
-end constraint;
-
-constraint c_no_id_hazard :=
-	if (!m_rst)
-		(((c/id_unit/if_src1 != c/id_unit/id_dst) || prev(m_rst)) &&
-		((c/id_unit/if_src2 != c/id_unit/id_dst) || prev(m_rst)) &&
-		((c/id_unit/if_src1 != c/id_unit/ex_dst) || prev(m_rst, 2)) &&
-		((c/id_unit/if_src2 != c/id_unit/ex_dst) || prev(m_rst, 2)));
 	endif;
 end constraint;
 */
@@ -331,113 +199,11 @@ macro logic mg_t3_flush := ((mg_t1_ID_flush || mg_t1_EX_flush || mg_t1_ME_flush 
 macro logic mg_t4_flush := ((mg_t1_ID_flush || mg_t1_EX_flush || mg_t1_ME_flush || mg_t1_WB_flush) && (IF_tcnt > 3)) end macro;
 macro logic mg_t5_flush := ((mg_t1_ID_flush || mg_t1_EX_flush || mg_t1_ME_flush || mg_t1_WB_flush) && (IF_tcnt > 4)) end macro;
 
-/*
-TODO:
-	-try to match windows exactly (remove overlap)
-*/
 
-macro unsigned v_examination_window := 30 end macro;
-
-property window_check;
-//dependencies: c_no_debug, c_no_exception, c_no_st_flush, c_if_stall_nxt_pc_fairness, c_if_parcel_valid_fairness, c_dmem_fairness;
-
-for timepoints:
-	t2_IF_tx_f = t + 0..v_examination_window waits_for complete mg_t2_IF_tx,
-	t2_ID_tx_f = t + 0..v_examination_window waits_for complete mg_t2_ID_tx,
-	t2_EX_tx_f = t + 0..v_examination_window waits_for complete mg_t2_EX_tx,
-	t2_ME_tx_f = t + 0..v_examination_window waits_for complete mg_t2_ME_tx,
-	t2_WB_tx_f = t + 0..v_examination_window waits_for complete mg_t2_WB_tx,
-
-	t_dummy = t; // last dummy line (for the semicolon)
-
-freeze:
-	at_t2_IF_tx_exist = mg_t2_IF_tx@t2_IF_tx_f,
-	at_t2_ID_tx_exist = mg_t2_ID_tx@t2_ID_tx_f,
-	at_t2_EX_tx_exist = mg_t2_EX_tx@t2_EX_tx_f,
-	at_t2_ME_tx_exist = mg_t2_ME_tx@t2_ME_tx_f,
-	at_t2_WB_tx_exist = mg_t2_WB_tx@t2_WB_tx_f,
-
-	at_t_dummy = m_clk@t_dummy; // last dummy line (for the semicolon)
-
-assume:
-/*
-	// Need separate property to check each stage tx case
-	// TODO: Find a simple way to combine these assumptions?
-	// Note that each tx has to be the first occurance otherwise the property is not correct
-	// Use floating inputs?
-
-
-	at t+v_examination_window: mg_t2_IF_tx;
-	during[t,t+v_examination_window-1]: !mg_t2_IF_tx;
-
-	at t+v_examination_window: mg_t2_ID_tx;
-	during[t,t+v_examination_window-1]: !mg_t2_ID_tx;
-
-	at t+v_examination_window: mg_t2_EX_tx;
-	during[t,t+v_examination_window-1]: !mg_t2_EX_tx;
-
-	at t+v_examination_window: mg_t2_ME_tx;
-	during[t,t+v_examination_window-1]: !mg_t2_ME_tx;
-
-	at t+v_examination_window: mg_t2_WB_tx;
-	during[t,t+v_examination_window-1]: !mg_t2_WB_tx;
-
-*/
-
-	at t+v_examination_window: (
-			fell(next(t2_IF_tx_wait)) || 
-			fell(next(t2_ID_tx_wait)) || 
-			fell(next(t2_EX_tx_wait)) || 
-			fell(next(t2_ME_tx_wait)) || 
-			fell(next(t2_WB_tx_wait))
-		);
-
-	during[t,t2_IF_tx_f]: t2_IF_tx_wait == at_t2_IF_tx_exist;
-	during[t2_IF_tx_f+1,t+v_examination_window]: !t2_IF_tx_wait;
-
-	during[t,t2_ID_tx_f]: t2_ID_tx_wait == at_t2_ID_tx_exist;
-	during[t2_ID_tx_f+1,t+v_examination_window]: !t2_ID_tx_wait;
-
-	during[t,t2_EX_tx_f]: t2_EX_tx_wait == at_t2_EX_tx_exist;
-	during[t2_EX_tx_f+1,t+v_examination_window]: !t2_EX_tx_wait;
-
-	during[t,t2_ME_tx_f]: t2_ME_tx_wait == at_t2_ME_tx_exist;
-	during[t2_ME_tx_f+1,t+v_examination_window]: !t2_ME_tx_wait;
-
-	during[t,t2_WB_tx_f]: t2_WB_tx_wait == at_t2_WB_tx_exist;
-	during[t2_WB_tx_f+1,t+v_examination_window]: !t2_WB_tx_wait;
-
-
-    // Connect token counters
-	during[t,t+v_examination_window]: IF_tcnt_inc == m_IF_rx;
-	during[t,t+v_examination_window]: ID_tcnt_inc == m_ID_rx;
-	during[t,t+v_examination_window]: EX_tcnt_inc == m_EX_rx;
-	during[t,t+v_examination_window]: ME_tcnt_inc == m_ME_rx;
-	during[t,t+v_examination_window]: WB_tcnt_inc == m_WB_rx;
-
-	// Configure reset overlap
-	during[t,t+v_examination_window]: !rose(m_rst);
-	during[t,t+v_examination_window]: if (m_rst) IF_tcnt == 0 endif;
-	during[t,t+v_examination_window]: if (m_rst) ID_tcnt == 0 endif;
-	during[t,t+v_examination_window]: if (m_rst) EX_tcnt == 0 endif;
-	during[t,t+v_examination_window]: if (m_rst) ME_tcnt == 0 endif;
-	during[t,t+v_examination_window]: if (m_rst) WB_tcnt == 0 endif;
-
-	// Prevent counter overflowing
-	during[t,t+v_examination_window]: next(IF_tcnt) >= IF_tcnt;
-	during[t,t+v_examination_window]: next(ID_tcnt) >= ID_tcnt;
-	during[t,t+v_examination_window]: next(EX_tcnt) >= EX_tcnt;
-	during[t,t+v_examination_window]: next(ME_tcnt) >= ME_tcnt;
-	during[t,t+v_examination_window]: next(WB_tcnt) >= WB_tcnt;
-
-prove:
-	within[t,t+v_examination_window]: mg_t1_IF_rx;
-
-end property;
-
+macro unsigned v_examination_window := 25 end macro;
 
 property step_simple;
-dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi, c_scan_cg_en;
+dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi;
 for timepoints:
 	// t1 detection
 	t1_IF_rx_n = t,
@@ -501,14 +267,7 @@ assume:
 	during[t,t+v_examination_window]: ME_tcnt_inc == m_ME_rx;
 	at t: WB_tcnt == 0;
 	during[t,t+v_examination_window]: WB_tcnt_inc == m_WB_rx;
-/*
-	// For debugging
-	during[t,t+v_examination_window]: IF_instr_enum == getInstr(m_IF_instr);
-	during[t,t+v_examination_window]: ID_instr_enum == getInstr(m_ID_instr);
-	during[t,t+v_examination_window]: EX_instr_enum == getInstr(m_EX_instr);
-	during[t,t+v_examination_window]: ME_instr_enum == getInstr(m_ME_instr);
-	during[t,t+v_examination_window]: WB_instr_enum == getInstr(m_WB_instr);
-*/
+
 prove:
 	at t: !at_t1_flush || !at_t2_flush || !at_t3_flush || !at_t4_flush || !at_t5_flush;
 
@@ -520,74 +279,9 @@ prove:
 
 end property;
 
-property flush_check;
-dependencies: c_no_reset;//, c_no_debug, c_no_exception, c_no_st_flush, c_if_stall_nxt_pc_fairness, c_if_parcel_valid_fairness, c_dmem_fairness;
-for timepoints:
-	t1_IF_rx_n = t + 0..v_examination_window waits_for complete mg_t1_IF_rx,
-	t2_IF_rx_n = t + 0..v_examination_window waits_for complete mg_t2_IF_rx,
-	t3_IF_rx_n = t + 0..v_examination_window waits_for complete mg_t3_IF_rx,
-	t4_IF_rx_n = t + 0..v_examination_window waits_for complete mg_t4_IF_rx,
-	t5_IF_rx_n = t + 0..v_examination_window waits_for complete mg_t5_IF_rx,
-
-	t1_flush_f = t + 0..v_examination_window waits_for complete mg_t1_flush,
-	t2_flush_f = t + 0..v_examination_window waits_for complete mg_t2_flush,
-	t3_flush_f = t + 0..v_examination_window waits_for complete mg_t3_flush,
-	t4_flush_f = t + 0..v_examination_window waits_for complete mg_t4_flush,
-	t5_flush_f = t + 0..v_examination_window waits_for complete mg_t5_flush,
-
-	t_dummy = t; // last dummy line (for the semicolon)
-
-freeze:
-	// Freeze signals indicating flushing cases
-	at_t1_flush = mg_t1_flush@t1_flush_f,
-	at_t2_flush = mg_t2_flush@t2_flush_f,
-	at_t3_flush = mg_t3_flush@t3_flush_f,
-	at_t4_flush = mg_t4_flush@t4_flush_f,
-	at_t5_flush = mg_t5_flush@t5_flush_f,
-
-	at_t_dummy = m_clk@t_dummy; // last dummy line (for the semicolon)
-
-assume:
-	// Property is triggered whenever a token enters first pipeline stage
-	at t1_IF_rx_n: mg_t1_IF_rx;
-
-	// Make sure that property does not start at flushing
-	at t: !at_t1_flush;
-
-    // Connect token counters
-	at t: IF_tcnt == 0;
-	during[t,t+v_examination_window]: IF_tcnt_inc == m_IF_rx;
-	at t: ID_tcnt == 0;
-	during[t,t+v_examination_window]: ID_tcnt_inc == m_ID_rx;
-	at t: EX_tcnt == 0;
-	during[t,t+v_examination_window]: EX_tcnt_inc == m_EX_rx;
-	at t: ME_tcnt == 0;
-	during[t,t+v_examination_window]: ME_tcnt_inc == m_ME_rx;
-	at t: WB_tcnt == 0;
-	during[t,t+v_examination_window]: WB_tcnt_inc == m_WB_rx;
-/*
-	// For debugging
-	during[t,t+v_examination_window]: IF_instr_enum == getInstr(m_IF_instr);
-	during[t,t+v_examination_window]: ID_instr_enum == getInstr(m_ID_instr);
-	during[t,t+v_examination_window]: EX_instr_enum == getInstr(m_EX_instr);
-	during[t,t+v_examination_window]: ME_instr_enum == getInstr(m_ME_instr);
-	during[t,t+v_examination_window]: WB_instr_enum == getInstr(m_WB_instr);
-*/
-prove:
-	at t: !at_t2_flush || !at_t3_flush || !at_t4_flush || !at_t5_flush;
-
-	at t1_IF_rx_n: mg_t1_IF_rx;
-	at t2_IF_rx_n: if (at_t1_flush) mg_t2_IF_rx endif;
-	at t3_IF_rx_n: if (at_t1_flush && at_t2_flush) mg_t3_IF_rx endif;
-	at t4_IF_rx_n: if (at_t1_flush && at_t2_flush && at_t3_flush) mg_t4_IF_rx endif;
-	at t5_IF_rx_n: if (at_t1_flush && at_t2_flush && at_t3_flush && at_t4_flush) mg_t5_IF_rx endif;
-
-end property;
-
-
 
 property step;
-dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi, c_testing, c_scan_cg_en;
+dependencies: c_no_reset, c_no_debug, c_no_irq, c_imem_grant, c_imem_valid, c_dmem_grant, c_dmem_valid, c_fetch_enable, c_no_wfi;
 for timepoints:
 
 	// This code detects last use of the stage that can come from either t1 or some older token if t1 contains skipped stages
@@ -723,19 +417,7 @@ freeze:
 	at_t3_flush = mg_t3_flush@t3_flush_f,
 	at_t4_flush = mg_t4_flush@t4_flush_f,
 	at_t5_flush = mg_t5_flush@t5_flush_f,
-/*
-	at_t2_IF_tx_instr = m_IF_instr@t2_IF_tx_f,
-	at_t2_ID_tx_instr = m_ID_instr@t2_ID_tx_f,
-	at_t2_EX_tx_instr = m_EX_instr@t2_EX_tx_f,
-	at_t2_ME_tx_instr = m_ME_instr@t2_ME_tx_f,
-	at_t2_WB_tx_instr = m_WB_instr@t2_WB_tx_f,
 
-	at_t2_IF_tx_pc = m_IF_pc@t2_IF_tx_f,
-	at_t2_ID_tx_pc = m_ID_pc@t2_ID_tx_f,
-	at_t2_EX_tx_pc = m_EX_pc@t2_EX_tx_f,
-	at_t2_ME_tx_pc = m_ME_pc@t2_ME_tx_f,
-	at_t2_WB_tx_pc = m_WB_pc@t2_WB_tx_f,
-*/
 	at_t_dummy = m_clk@t_dummy; // last dummy line (for the semicolon)
 
 assume:
@@ -745,8 +427,6 @@ assume:
 	// Make sure that property does not start at flushing and no flushing occur withing the window
 	at t: !at_t1_flush;
 	at t: !at_t2_flush;
-
-	//within[t,t+v_examination_window]: t0_WB_tx_wait == true;
 
 	// Connect token counters
 	at t: IF_tcnt == 0;
@@ -812,14 +492,7 @@ assume:
 
 	during[t,t2_WB_rx_f]: t2_WB_rx_wait == at_t2_WB_rx_exist;
 	during[t2_WB_rx_f+1,t+v_examination_window]: !t2_WB_rx_wait;
-/*
-	// For debugging
-	during[t,t+v_examination_window]: IF_instr_enum == getInstr(m_IF_instr);
-	during[t,t+v_examination_window]: ID_instr_enum == getInstr(m_ID_instr);
-	during[t,t+v_examination_window]: EX_instr_enum == getInstr(m_EX_instr);
-	during[t,t+v_examination_window]: ME_instr_enum == getInstr(m_ME_instr);
-	during[t,t+v_examination_window]: WB_instr_enum == getInstr(m_WB_instr);
-*/
+
 prove:
 	at t2_IF_rx_n: mg_t2_IF_rx;
 
@@ -829,17 +502,6 @@ prove:
 	at t3_IF_rx_n: if (at_t2_flush) mg_t3_IF_rx endif;
 	at t4_IF_rx_n: if (at_t2_flush && at_t3_flush) mg_t4_IF_rx endif;
 	at t5_IF_rx_n: if (at_t2_flush && at_t3_flush && at_t4_flush) mg_t5_IF_rx endif;
-*/
-/*
-	at t2_ID_tx_f: m_ID_instr == at_t2_IF_tx_instr;
-	at t2_EX_tx_f: m_EX_instr == at_t2_ID_tx_instr;
-	at t2_ME_tx_f: m_ME_instr == at_t2_EX_tx_instr;
-	at t2_WB_tx_f: m_WB_instr == at_t2_ME_tx_instr;
-
-	at t2_ID_tx_f: m_ID_pc == at_t2_IF_tx_pc;
-	at t2_EX_tx_f: m_EX_pc == at_t2_ID_tx_pc;
-	at t2_ME_tx_f: m_ME_pc == at_t2_EX_tx_pc;
-	at t2_WB_tx_f: m_WB_pc == at_t2_ME_tx_pc;
 */
 /*	// Prove right hook
 	at t2_IF_tx_f: mg_t2_IF_tx;
