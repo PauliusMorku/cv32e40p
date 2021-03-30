@@ -88,7 +88,9 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
 
   // Debug Interface
   input  logic        debug_req_i,
-
+  output logic        debug_havereset_o,
+  output logic        debug_running_o,
+  output logic        debug_halted_o,
 
   // CPU Control Signals
   input  logic        fetch_enable_i,
@@ -166,7 +168,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
 
   // ALU Control
   logic        alu_en_ex;
-  logic [ALU_OP_WIDTH-1:0] alu_operator_ex;
+  alu_opcode_e alu_operator_ex;
   logic [31:0] alu_operand_a_ex;
   logic [31:0] alu_operand_b_ex;
   logic [31:0] alu_operand_c_ex;
@@ -178,7 +180,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
   logic [ 1:0] alu_clpx_shift_ex;
 
   // Multiplier Control
-  logic [ 2:0] mult_operator_ex;
+  mul_opcode_e mult_operator_ex;
   logic [31:0] mult_operand_a_ex;
   logic [31:0] mult_operand_b_ex;
   logic [31:0] mult_operand_c_ex;
@@ -195,7 +197,6 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
   logic        mult_clpx_img_ex;
 
   // FPU
-  logic [C_PC-1:0]            fprec_csr;
   logic [C_RM-1:0]            frm_csr;
   logic [C_FFLAG-1:0]         fflags_csr;
   logic                       fflags_we;
@@ -236,12 +237,12 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
 
   // CSR control
   logic        csr_access_ex;
-  logic [1:0]  csr_op_ex;
+  csr_opcode_e csr_op_ex;
   logic [23:0] mtvec, utvec;
   logic [1:0]  mtvec_mode;
   logic [1:0]  utvec_mode;
 
-  logic [1:0]  csr_op;
+  csr_opcode_e csr_op;
   csr_num_e    csr_addr;
   csr_num_e    csr_addr_int;
   logic [31:0] csr_rdata;
@@ -698,6 +699,9 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
     .debug_cause_o                ( debug_cause          ),
     .debug_csr_save_o             ( debug_csr_save       ),
     .debug_req_i                  ( debug_req_i          ),
+    .debug_havereset_o            ( debug_havereset_o    ),
+    .debug_running_o              ( debug_running_o      ),
+    .debug_halted_o               ( debug_halted_o       ),
     .debug_single_step_i          ( debug_single_step    ),
     .debug_ebreakm_i              ( debug_ebreakm        ),
     .debug_ebreaku_i              ( debug_ebreaku        ),
@@ -793,7 +797,6 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
     .mult_multicycle_o          ( mult_multicycle              ), // to ID/EX pipe registers
 
     // FPU
-    .fpu_prec_i                 ( fprec_csr                    ),
     .fpu_fflags_we_o            ( fflags_we                    ),
 
     // APU
@@ -976,7 +979,6 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
     .csr_rdata_o                ( csr_rdata              ),
 
     .frm_o                      ( frm_csr                ),
-    .fprec_o                    ( fprec_csr              ),
     .fflags_i                   ( fflags_csr             ),
     .fflags_we_i                ( fflags_we              ),
 
@@ -1069,7 +1071,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
   ///////////////////////////
 
   generate
-  if(PULP_SECURE && USE_PMP) begin : RISCY_PMP
+  if(PULP_SECURE && USE_PMP) begin : gen_pmp
   cv32e40p_pmp
   #(
      .N_PMP_ENTRIES(N_PMP_ENTRIES)
@@ -1105,7 +1107,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
     .instr_addr_o            ( instr_addr_o       ),
     .instr_err_o             ( instr_err_pmp      )
   );
-  end else begin
+  end else begin : gen_no_pmp
     assign instr_req_o   = instr_req_pmp;
     assign instr_addr_o  = instr_addr_pmp;
     assign instr_gnt_pmp = instr_gnt_i;
@@ -1125,7 +1127,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
   //----------------------------------------------------------------------------
 
   generate
-  if (PULP_CLUSTER) begin
+  if (PULP_CLUSTER) begin : gen_pulp_cluster_assumptions
 
     // Assumptions/requirements on the environment when pulp_clock_en_i = 0
     property p_env_req_0;
@@ -1168,7 +1170,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
   end
 
   generate
-  if (!PULP_CLUSTER) begin
+  if (!PULP_CLUSTER) begin : gen_no_pulp_cluster_assertions
     // Check that a taken IRQ is actually enabled (e.g. that we do not react to an IRQ that was just disabled in MIE)
     property p_irq_enabled_0;
        @(posedge clk) disable iff (!rst_ni) (pc_set && (pc_mux_id == PC_EXCEPTION) && (exc_pc_mux_id == EXC_PC_IRQ)) |->
@@ -1188,7 +1190,7 @@ module cv32e40p_core import cv32e40p_apu_core_pkg::*;
   endgenerate
 
   generate
-  if (!PULP_XPULP) begin
+  if (!PULP_XPULP) begin : gen_no_pulp_xpulp_assertions
 
     // Illegal, ECALL, EBRK checks excluded for PULP due to other definition for for Hardware Loop
 

@@ -76,7 +76,7 @@ module cv32e40p_decoder import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
 
   // ALU signals
   output logic        alu_en_o,                // ALU enable
-  output logic [ALU_OP_WIDTH-1:0] alu_operator_o, // ALU operation selection
+  output alu_opcode_e alu_operator_o, // ALU operation selection
   output logic [2:0]  alu_op_a_mux_sel_o,      // operand a selection: reg value, PC, immediate or zero
   output logic [2:0]  alu_op_b_mux_sel_o,      // operand b selection: reg value or immediate
   output logic [1:0]  alu_op_c_mux_sel_o,      // operand c selection: reg value or jump target
@@ -90,7 +90,7 @@ module cv32e40p_decoder import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
   output logic        is_subrot_o,
 
   // MUL related control signals
-  output logic [2:0]  mult_operator_o,         // Multiplication operation selection
+  output mul_opcode_e mult_operator_o,         // Multiplication operation selection
   output logic        mult_int_en_o,           // perform integer multiplication
   output logic        mult_dot_en_o,           // perform dot multiplication
   output logic [0:0]  mult_imm_mux_o,          // Multiplication immediate mux selector
@@ -120,7 +120,7 @@ module cv32e40p_decoder import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
   // CSR manipulation
   output logic        csr_access_o,            // access to CSR
   output logic        csr_status_o,            // access to xstatus CSR
-  output logic [1:0]  csr_op_o,                // operation to perform on CSR
+  output csr_opcode_e csr_op_o,                // operation to perform on CSR
   input  PrivLvl_t    current_priv_lvl_i,      // The current privilege level
 
   // LD/ST unit signals
@@ -161,7 +161,7 @@ module cv32e40p_decoder import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
   logic       csr_illegal;
   logic [1:0] ctrl_transfer_insn;
 
-  logic [1:0] csr_op;
+  csr_opcode_e csr_op;
 
   logic       alu_en;
   logic       mult_int_en;
@@ -1152,38 +1152,26 @@ module cv32e40p_decoder import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
             end
             {6'b00_0001, 3'b100}: begin // div
               alu_op_a_mux_sel_o = OP_A_REGB_OR_FWD;
-              alu_op_b_mux_sel_o = OP_B_REGC_OR_FWD;
-              regc_mux_o         = REGC_S1;
-              regc_used_o        = 1'b1;
+              alu_op_b_mux_sel_o = OP_B_REGA_OR_FWD;
               regb_used_o        = 1'b1;
-              rega_used_o        = 1'b0;
               alu_operator_o     = ALU_DIV;
             end
             {6'b00_0001, 3'b101}: begin // divu
               alu_op_a_mux_sel_o = OP_A_REGB_OR_FWD;
-              alu_op_b_mux_sel_o = OP_B_REGC_OR_FWD;
-              regc_mux_o         = REGC_S1;
-              regc_used_o        = 1'b1;
+              alu_op_b_mux_sel_o = OP_B_REGA_OR_FWD;
               regb_used_o        = 1'b1;
-              rega_used_o        = 1'b0;
               alu_operator_o     = ALU_DIVU;
             end
             {6'b00_0001, 3'b110}: begin // rem
               alu_op_a_mux_sel_o = OP_A_REGB_OR_FWD;
-              alu_op_b_mux_sel_o = OP_B_REGC_OR_FWD;
-              regc_mux_o         = REGC_S1;
-              regc_used_o        = 1'b1;
+              alu_op_b_mux_sel_o = OP_B_REGA_OR_FWD;
               regb_used_o        = 1'b1;
-              rega_used_o        = 1'b0;
               alu_operator_o     = ALU_REM;
             end
             {6'b00_0001, 3'b111}: begin // remu
               alu_op_a_mux_sel_o = OP_A_REGB_OR_FWD;
-              alu_op_b_mux_sel_o = OP_B_REGC_OR_FWD;
-              regc_mux_o         = REGC_S1;
-              regc_used_o        = 1'b1;
+              alu_op_b_mux_sel_o = OP_B_REGA_OR_FWD;
               regb_used_o        = 1'b1;
-              rega_used_o        = 1'b0;
               alu_operator_o     = ALU_REMU;
             end
 
@@ -2368,10 +2356,6 @@ module cv32e40p_decoder import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*;
               CSR_FRM,
               CSR_FCSR :
                 if(!FPU) csr_illegal = 1'b1;
-
-            // Floating point (custom)
-            CSR_FPREC :
-                if(!(FPU && PULP_XPULP)) csr_illegal = 1'b1;
 
             //  Writes to read only CSRs results in illegal instruction
             CSR_MVENDORID,

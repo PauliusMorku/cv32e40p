@@ -137,6 +137,9 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   input  logic         trigger_match_i,
   output logic         debug_p_elw_no_sleep_o,
   output logic         debug_wfi_no_sleep_o,
+  output logic         debug_havereset_o,
+  output logic         debug_running_o,
+  output logic         debug_halted_o,
 
   // Wakeup Signal
   output logic        wake_from_sleep_o,
@@ -202,6 +205,8 @@ module cv32e40p_controller import cv32e40p_pkg::*;
   // FSM state encoding
   ctrl_state_e ctrl_fsm_cs, ctrl_fsm_ns;
 
+  // Debug state
+  debug_state_e debug_fsm_cs, debug_fsm_ns;
 
   logic jump_done, jump_done_q, jump_in_dec, branch_in_id_dec, branch_in_id;
 
@@ -384,11 +389,9 @@ module cv32e40p_controller import cv32e40p_pkg::*;
       FIRST_FETCH:
       begin
         is_decoding_o = 1'b0;
-        
-        // Stall because of IF miss
-        if (id_ready_i == 1'b1) begin
-          ctrl_fsm_ns = DECODE;
-        end
+
+        // ID stage is always ready
+        ctrl_fsm_ns = DECODE;
 
         // handle interrupts
         if (irq_req_ctrl_i && ~(debug_req_pending || debug_mode_q)) begin
@@ -418,8 +421,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
           csr_save_cause_o  = 1'b1;
           csr_cause_o       = {1'b1,irq_id_ctrl_i};
           csr_save_if_o     = 1'b1;
-
-          ctrl_fsm_ns       = DECODE;
         end
       end
 
@@ -1069,10 +1070,6 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                     pc_set_o          = 1'b1;
                     hwlp_dec_cnt_o[1] = 1'b1;
                 end
-
-                 if (debug_single_step_i && ~debug_mode_q)
-                    ctrl_fsm_ns = DBG_TAKEN_IF;
-
               end
 
               wfi_i: begin
@@ -1080,10 +1077,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
                       ctrl_fsm_ns = DBG_TAKEN_IF;
                       debug_force_wakeup_n = 1'b1;
                   end else begin
-                      if ( wfi_active )
-                          ctrl_fsm_ns = WAIT_SLEEP;
-                      else
-                          ctrl_fsm_ns = DECODE;
+                    ctrl_fsm_ns = WAIT_SLEEP;
                   end
               end
               fencei_insn_i: begin
@@ -1229,7 +1223,9 @@ module cv32e40p_controller import cv32e40p_pkg::*;
              debug_req_entry_q                     )
             begin
               ctrl_fsm_ns = DBG_TAKEN_ID;
-            end else if (debug_single_step_i) begin
+            end else
+            begin
+              // else must be debug_single_step_i
               ctrl_fsm_ns = DBG_TAKEN_IF;
             end
         end
@@ -1247,7 +1243,7 @@ module cv32e40p_controller import cv32e40p_pkg::*;
 
 
 generate
-  if(PULP_XPULP) begin
+  if(PULP_XPULP) begin : gen_hwlp
     //////////////////////////////////////////////////////////////////////////////
     // Convert hwlp_jump_o to a pulse
     //////////////////////////////////////////////////////////////////////////////
@@ -1281,7 +1277,7 @@ generate
     assign hwlp_end1_geq_pc        = hwlp_end_addr_i[1] >= pc_id_i;
     assign is_hwlp_body            = ((hwlp_start0_leq_pc && hwlp_end0_geq_pc) && hwlp_counter0_gt_1) ||  ((hwlp_start1_leq_pc && hwlp_end1_geq_pc) && hwlp_counter1_gt_1);
 
-  end else begin
+  end else begin : gen_no_hwlp
 
     assign hwlp_jump_o             = 1'b0;
     assign hwlp_end_4_id_q         = 1'b0;
@@ -1463,6 +1459,59 @@ endgenerate
       else if( debug_mode_q )
         debug_req_q <= 1'b0;
 
+  // Debug state FSM
+  always_ff @(posedge clk , negedge rst_n)
+  begin
+    if ( rst_n == 1'b0 )
+    begin
+      debug_fsm_cs <= HAVERESET;
+    end
+    else
+    begin
+      debug_fsm_cs <= debug_fsm_ns;
+    end
+  end
+
+  always_comb
+  begin
+    debug_fsm_ns = debug_fsm_cs;
+
+    case (debug_fsm_cs)
+      HAVERESET:
+      begin
+        if (debug_mode_n || (ctrl_fsm_ns == FIRST_FETCH)) begin
+          if (debug_mode_n) begin
+            debug_fsm_ns = HALTED;
+          end else begin
+            debug_fsm_ns = RUNNING;
+          end
+        end
+      end
+
+      RUNNING:
+      begin
+        if (debug_mode_n) begin
+          debug_fsm_ns = HALTED;
+        end
+      end
+
+      HALTED:
+      begin
+        if (!debug_mode_n) begin
+          debug_fsm_ns = RUNNING;
+        end
+      end
+
+      default: begin
+        debug_fsm_ns = HAVERESET;
+      end
+    endcase
+  end
+
+  assign debug_havereset_o = debug_fsm_cs[HAVERESET_INDEX];
+  assign debug_running_o = debug_fsm_cs[RUNNING_INDEX];
+  assign debug_halted_o = debug_fsm_cs[HALTED_INDEX];
+
   //----------------------------------------------------------------------------
   // Assertions
   //----------------------------------------------------------------------------
@@ -1489,7 +1538,7 @@ endgenerate
   a_pulp_cluster_excluded_states : assert property(p_pulp_cluster_excluded_states);
 
   generate
-  if (PULP_XPULP) begin
+  if (PULP_XPULP) begin : gen_pulp_xpulp_assertions
 
     // HWLoop 0 and 1 having target address constraints
     property p_hwlp_same_target_address;
@@ -1498,7 +1547,7 @@ endgenerate
 
     a_hwlp_same_target_address : assert property(p_hwlp_same_target_address) else $warning("%t, HWLoops target address do not respect constraints", $time);
 
-  end else begin
+  end else begin : gen_no_pulp_xpulp_assertions
 
     property p_no_hwlp;
        @(posedge clk) (1'b1) |-> ((pc_mux_o != PC_HWLOOP) && (ctrl_fsm_cs != DECODE_HWLOOP) &&
@@ -1516,12 +1565,24 @@ endgenerate
   endgenerate
 
   // Ensure DBG_TAKEN_IF can only be enterred if in single step mode or woken
- // up from sleep by debug_req_i
+  // up from sleep by debug_req_i
          
   a_single_step_dbg_taken_if : assert property (@(posedge clk)  disable iff (!rst_n)  (ctrl_fsm_ns==DBG_TAKEN_IF) |-> ((~debug_mode_q && debug_single_step_i) || debug_force_wakeup_n));
 
   // Ensure DBG_FLUSH state is only one cycle. This implies that cause is either trigger, debug_req_entry, or ebreak
   a_dbg_flush : assert property (@(posedge clk)  disable iff (!rst_n)  (ctrl_fsm_cs==DBG_FLUSH) |-> (ctrl_fsm_ns!=DBG_FLUSH) );
+
+  // Ensure that debug state outputs are one-hot
+  a_debug_state_onehot : assert property (@(posedge clk) $onehot({debug_havereset_o, debug_running_o, debug_halted_o}));
+
+  // Ensure that debug_halted_o equals debug_mode_q
+  a_debug_halted_equals_debug_mode : assert property (@(posedge clk) disable iff (!rst_n) (1'b1) |-> (debug_mode_q == debug_halted_o));
+
+  // Ensure ID always ready in FIRST_FETCH state
+  a_first_fetch_id_ready : assert property (@(posedge clk) disable iff (!rst_n) (ctrl_fsm_cs == FIRST_FETCH) |-> (id_ready_i == 1'b1));
+
+  // Ensure that the only way to get to DBG_TAKEN_IF from DBG_FLUSH is if debug_single_step_i is asserted
+  a_dbg_flush_to_taken_if : assert property (@(posedge clk) disable iff (!rst_n) (ctrl_fsm_cs == DBG_FLUSH) && (ctrl_fsm_ns == DBG_TAKEN_IF) |-> debug_single_step_i);
 
 `endif
 

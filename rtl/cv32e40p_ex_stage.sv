@@ -42,7 +42,7 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   input  logic        rst_n,
 
   // ALU signals from ID stage
-  input  logic [ALU_OP_WIDTH-1:0] alu_operator_i,
+  input  alu_opcode_e alu_operator_i,
   input  logic [31:0] alu_operand_a_i,
   input  logic [31:0] alu_operand_b_i,
   input  logic [31:0] alu_operand_c_i,
@@ -56,7 +56,7 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   input  logic [ 1:0] alu_clpx_shift_i,
 
   // Multiplier signals
-  input  logic [ 2:0] mult_operator_i,
+  input  mul_opcode_e mult_operator_i,
   input  logic [31:0] mult_operand_a_i,
   input  logic [31:0] mult_operand_b_i,
   input  logic [31:0] mult_operand_c_i,
@@ -76,7 +76,6 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   output logic        mult_multicycle_o,
 
   // FPU signals
-  input  logic [C_PC-1:0]             fpu_prec_i,
   output logic                        fpu_fflags_we_o,
 
   // APU signals
@@ -308,7 +307,7 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   );
 
    generate
-      if (FPU == 1) begin
+      if (FPU == 1) begin : gen_apu
          ////////////////////////////////////////////////////
          //     _    ____  _   _   ____ ___ ____  ____     //
          //    / \  |  _ \| | | | |  _ \_ _/ ___||  _ \    //
@@ -364,7 +363,7 @@ module cv32e40p_ex_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
          assign apu_result      = apu_result_i;
          assign fpu_fflags_we_o = apu_valid;
       end
-      else begin
+      else begin : gen_no_apu
          // default assignements for the case when no FPU/APU is attached.
          assign apu_req_o         = '0;
          assign apu_operands_o[0] = '0;

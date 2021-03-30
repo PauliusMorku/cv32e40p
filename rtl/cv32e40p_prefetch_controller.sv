@@ -78,7 +78,9 @@ module cv32e40p_prefetch_controller
   input  logic                     fifo_empty_i             // FIFO is empty
 );
 
-  enum logic {IDLE, BRANCH_WAIT} state_q, next_state;
+  import cv32e40p_pkg::*;
+
+  prefetch_state_e state_q, next_state;
 
   logic  [FIFO_ADDR_DEPTH:0]     cnt_q;                           // Transaction counter
   logic  [FIFO_ADDR_DEPTH:0]     next_cnt;                        // Next value for cnt_q
@@ -138,12 +140,12 @@ module cv32e40p_prefetch_controller
 
   // Transaction request generation
   generate
-    if (PULP_OBI == 0) begin
+    if (PULP_OBI == 0) begin : gen_no_pulp_obi
       // OBI compatible (avoids combinatorial path from instr_rvalid_i to instr_req_o).
       // Multiple trans_* transactions can be issued (and accepted) before a response
       // (resp_*) is received.
       assign trans_valid_o = req_i && (fifo_cnt_masked + cnt_q < DEPTH);
-    end else begin
+    end else begin : gen_pulp_obi
       // Legacy PULP OBI behavior, i.e. only issue subsequent transaction if preceding transfer
       // is about to finish (re-introducing timing critical path from instr_rvalid_i to instr_req_o)
       assign trans_valid_o = (cnt_q == 3'b000) ? req_i && (fifo_cnt_masked + cnt_q < DEPTH) :
@@ -188,9 +190,9 @@ module cv32e40p_prefetch_controller
 
       BRANCH_WAIT:
       begin
-        // Replay previous branch target address (trans_addr_q) or new branch address (although this
-        // can probably not occur in CV32E40P (defensive programming to always be receptive for a new
-        // taken branch)) until accepted by the bus interface adapter.
+        // Replay previous branch target address (trans_addr_q) or new branch address (this can
+        // occur if for example an interrupt is taken right after a taken jump which did not
+        // yet have its target address accepted by the bus interface adapter.
         trans_addr_o = branch_i ? aligned_branch_addr : trans_addr_q;
         if (trans_valid_o && trans_ready_i) begin
           // Transaction with branch target address has been accepted. Start regular prefetch again.
@@ -243,7 +245,7 @@ module cv32e40p_prefetch_controller
   end
 
   generate
-  if (PULP_XPULP) begin
+  if (PULP_XPULP) begin : gen_hwlp
 
     // Flush the FIFO if it is not empty and we are hwlp branching.
     // If HWLP_END is not going to ID, save it from the flush.
@@ -299,7 +301,7 @@ module cv32e40p_prefetch_controller
     // is served first so the flush should be normal (caused by branch_i)
     assign hwlp_flush_resp_delayed = hwlp_flush_after_resp && resp_valid_i;
 
-  end else begin
+  end else begin : gen_no_hwlp
 
     // Flush the FIFO if it is not empty
     assign fifo_flush_o             = branch_i;

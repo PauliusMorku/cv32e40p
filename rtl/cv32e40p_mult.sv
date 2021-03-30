@@ -23,13 +23,13 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-module cv32e40p_mult
+module cv32e40p_mult import cv32e40p_pkg::*;
 (
   input  logic        clk,
   input  logic        rst_n,
 
   input  logic        enable_i,
-  input  logic [ 2:0] operator_i,
+  input  mul_opcode_e operator_i,
 
   // integer and short multiplier
   input  logic        short_subword_i,
@@ -57,8 +57,6 @@ module cv32e40p_mult
   output logic        ready_o,
   input  logic        ex_ready_i
 );
-
-  import cv32e40p_pkg::*;
 
   ///////////////////////////////////////////////////////////////
   //  ___ _  _ _____ ___ ___ ___ ___   __  __ _   _ _  _____   //
@@ -93,7 +91,7 @@ module cv32e40p_mult
   logic        mulh_clearcarry;
   logic        mulh_ready;
 
-  enum logic [2:0] {IDLE, STEP0, STEP1, STEP2, FINISH} mulh_CS, mulh_NS;
+  mult_state_e mulh_CS, mulh_NS;
 
   // prepare the rounding value
   assign short_round_tmp = (32'h00000001) << imm_i;
@@ -138,7 +136,7 @@ module cv32e40p_mult
     multicycle_o     = 1'b0;
 
     case (mulh_CS)
-      IDLE: begin
+      IDLE_MULT: begin
         mulh_active = 1'b0;
         mulh_ready  = 1'b1;
         mulh_save   = 1'b0;
@@ -192,7 +190,7 @@ module cv32e40p_mult
         mulh_subword = 2'b11;
         mulh_ready   = 1'b1;
         if (ex_ready_i)
-          mulh_NS = IDLE;
+          mulh_NS = IDLE_MULT;
       end
     endcase
   end
@@ -201,7 +199,7 @@ module cv32e40p_mult
   begin
     if (~rst_n)
     begin
-      mulh_CS      <= IDLE;
+      mulh_CS      <= IDLE_MULT;
       mulh_carry_q <= 1'b0;
     end else begin
       mulh_CS      <= mulh_NS;

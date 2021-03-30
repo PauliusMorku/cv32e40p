@@ -109,20 +109,20 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
 
     // ALU
     output logic        alu_en_ex_o,
-    output logic [ALU_OP_WIDTH-1:0] alu_operator_ex_o,
+    output alu_opcode_e alu_operator_ex_o,
     output logic        alu_is_clpx_ex_o,
     output logic        alu_is_subrot_ex_o,
     output logic [ 1:0] alu_clpx_shift_ex_o,
 
     // MUL
-    output logic [ 2:0] mult_operator_ex_o,
-    output logic [31:0] mult_operand_a_ex_o,
-    output logic [31:0] mult_operand_b_ex_o,
-    output logic [31:0] mult_operand_c_ex_o,
-    output logic        mult_en_ex_o,
-    output logic        mult_sel_subword_ex_o,
-    output logic [ 1:0] mult_signed_mode_ex_o,
-    output logic [ 4:0] mult_imm_ex_o,
+    output mul_opcode_e  mult_operator_ex_o,
+    output logic [31:0]  mult_operand_a_ex_o,
+    output logic [31:0]  mult_operand_b_ex_o,
+    output logic [31:0]  mult_operand_c_ex_o,
+    output logic         mult_en_ex_o,
+    output logic         mult_sel_subword_ex_o,
+    output logic [ 1:0]  mult_signed_mode_ex_o,
+    output logic [ 4:0]  mult_imm_ex_o,
 
     output logic [31:0] mult_dot_op_a_ex_o,
     output logic [31:0] mult_dot_op_b_ex_o,
@@ -152,7 +152,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
 
     // CSR ID/EX
     output logic        csr_access_ex_o,
-    output logic [1:0]  csr_op_ex_o,
+    output csr_opcode_e csr_op_ex_o,
     input  PrivLvl_t    current_priv_lvl_i,
     output logic        csr_irq_sec_o,
     output logic [5:0]  csr_cause_o,
@@ -214,6 +214,9 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     input  logic        debug_ebreaku_i,
     input  logic        trigger_match_i,
     output logic        debug_p_elw_no_sleep_o,
+    output logic        debug_havereset_o,
+    output logic        debug_running_o,
+    output logic        debug_halted_o,
 
     // Wakeup Signal
     output logic        wake_from_sleep_o,
@@ -347,7 +350,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
 
   // ALU Control
   logic        alu_en;
-  logic [ALU_OP_WIDTH-1:0] alu_operator;
+  alu_opcode_e alu_operator;
   logic [2:0]  alu_op_a_mux_sel;
   logic [2:0]  alu_op_b_mux_sel;
   logic [1:0]  alu_op_c_mux_sel;
@@ -358,7 +361,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   logic [1:0]  ctrl_transfer_target_mux_sel;
 
   // Multiplier Control
-  logic [2:0]  mult_operator;    // multiplication operation selection
+  mul_opcode_e mult_operator;    // multiplication operation selection
   logic        mult_en;          // multiplication is used instead of ALU
   logic        mult_int_en;      // use integer multiplier
   logic        mult_sel_subword; // Select a subword when doing multiplications
@@ -418,7 +421,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
 
   // CSR control
   logic        csr_access;
-  logic [1:0]  csr_op;
+  csr_opcode_e csr_op;
   logic        csr_status;
 
   logic        prepost_useincr;
@@ -784,7 +787,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   /////////////////////////////
   // read regs
   generate
-    if (APU == 1) begin : apu_op_preparation
+    if (APU == 1) begin : gen_apu
 
       if (APU_NARGS_CPU >= 1)
        assign apu_operands[0] = alu_operand_a;
@@ -866,8 +869,8 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
 
       assign apu_write_regs_o         = apu_write_regs;
       assign apu_write_regs_valid_o   = apu_write_regs_valid;
-    end else begin
-      for (genvar i=0; i<APU_NARGS_CPU; i++) begin : apu_tie_off
+    end else begin : gen_no_apu
+      for (genvar i=0; i<APU_NARGS_CPU; i++) begin : gen_apu_tie_off
         assign apu_operands[i]       = '0;
       end
 
@@ -1187,6 +1190,9 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     .trigger_match_i                ( trigger_match_i        ),
     .debug_p_elw_no_sleep_o         ( debug_p_elw_no_sleep_o ),
     .debug_wfi_no_sleep_o           ( debug_wfi_no_sleep     ),
+    .debug_havereset_o              ( debug_havereset_o      ),
+    .debug_running_o                ( debug_running_o        ),
+    .debug_halted_o                 ( debug_halted_o         ),
 
     // Wakeup Signal
     .wake_from_sleep_o              ( wake_from_sleep_o      ),
@@ -1290,7 +1296,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
   );
 
   generate
-  if (PULP_XPULP) begin : HWLOOP_REGS
+  if (PULP_XPULP) begin : gen_hwloop_regs
 
     ///////////////////////////////////////////////
     //  _   ___        ___     ___   ___  ____   //
@@ -1376,9 +1382,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
       assign hwlp_regid = (|hwlp_we_masked) ? hwlp_regid_int : csr_hwlp_regid_i;
       assign hwlp_we    = (|hwlp_we_masked) ? hwlp_we_masked : csr_hwlp_we_i;
 
-
-
-  end else begin
+  end else begin: gen_no_hwloop_regs
 
     assign hwlp_start_o   = 'b0;
     assign hwlp_end_o     = 'b0;
@@ -1396,7 +1400,6 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     assign hwlp_we        = 'b0;
 
   end
-
   endgenerate
 
 
@@ -1426,7 +1429,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
       alu_is_clpx_ex_o            <= 1'b0;
       alu_is_subrot_ex_o          <= 1'b0;
 
-      mult_operator_ex_o          <= '0;
+      mult_operator_ex_o          <= MUL_MAC32;
       mult_operand_a_ex_o         <= '0;
       mult_operand_b_ex_o         <= '0;
       mult_operand_c_ex_o         <= '0;
@@ -1732,7 +1735,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     a_xret_csr : assert property(p_xret_csr);
 
     generate
-    if (!A_EXTENSION) begin
+    if (!A_EXTENSION) begin : gen_no_a_extension_assertions
 
       // Check that A extension opcodes are decoded as illegal when A extension not enabled
       property p_illegal_0;
@@ -1745,7 +1748,7 @@ module cv32e40p_id_stage import cv32e40p_pkg::*; import cv32e40p_apu_core_pkg::*
     endgenerate
 
     generate
-    if (!PULP_XPULP) begin
+    if (!PULP_XPULP) begin : gen_no_pulp_xpulp_assertions
 
       // Check that PULP extension opcodes are decoded as illegal when PULP extension is not enabled
       property p_illegal_1;
